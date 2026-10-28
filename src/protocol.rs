@@ -160,12 +160,17 @@ pub fn parse(data: &[u8]) -> Result<Option<(Frame, usize)>, String> {
     }
 }
 
-fn parse_simple(data: &[u8], ctor: impl FnOnce(String) -> Frame) -> Result<Option<(Frame, usize)>, String> {
+fn parse_simple(
+    data: &[u8],
+    ctor: impl FnOnce(String) -> Frame,
+) -> Result<Option<(Frame, usize)>, String> {
     let crlf = match find_crlf(data, 1) {
         Some(i) => i,
         None => return Ok(None),
     };
-    let s = std::str::from_utf8(&data[1..crlf]).map_err(|_| "invalid utf8".to_string())?.to_string();
+    let s = std::str::from_utf8(&data[1..crlf])
+        .map_err(|_| "invalid utf8".to_string())?
+        .to_string();
     Ok(Some((ctor(s), crlf + 2)))
 }
 
@@ -335,4 +340,65 @@ fn parse_push(data: &[u8]) -> Result<Option<(Frame, usize)>, String> {
         pos += c;
     }
     Ok(Some((Frame::Array(Some(items)), pos)))
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_simple_string() {
+        let data = b"+OK\r\n";
+        let (f, c) = parse(data).unwrap().unwrap();
+        assert_eq!(f, Frame::SimpleString("OK".to_string()));
+        assert_eq!(c, 5);
+    }
+
+    #[test]
+    fn parse_bulk() {
+        let data = b"$6\r\nfoobar\r\n";
+        let (f, c) = parse(data).unwrap().unwrap();
+        assert_eq!(f, Frame::BulkString(Some(bytes::Bytes::from("foobar"))));
+        assert_eq!(c, 12);
+    }
+
+    #[test]
+    fn parse_null_bulk() {
+        let data = b"$-1\r\n";
+        let (f, c) = parse(data).unwrap().unwrap();
+        assert_eq!(f, Frame::BulkString(None));
+        assert_eq!(c, 5);
+    }
+
+    #[test]
+    fn parse_array() {
+        let data = b"*2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n";
+        let (f, _) = parse(data).unwrap().unwrap();
+        match f {
+            Frame::Array(Some(items)) => {
+                assert_eq!(items.len(), 2);
+                assert_eq!(items[0], Frame::BulkString(Some(bytes::Bytes::from("foo"))));
+                assert_eq!(items[1], Frame::BulkString(Some(bytes::Bytes::from("bar"))));
+            }
+            _ => panic!("expected array"),
+        }
+    }
+
+    #[test]
+    fn parse_incomplete_returns_none() {
+        let data = b"*2\r\n$3\r\nfoo\r\n";
+        assert!(parse(data).unwrap().is_none());
+    }
+
+    #[test]
+    fn roundtrip_serialize() {
+        let f = Frame::Array(Some(vec![
+            Frame::BulkString(Some(bytes::Bytes::from("SET"))),
+            Frame::BulkString(Some(bytes::Bytes::from("k"))),
+            Frame::BulkString(Some(bytes::Bytes::from("v"))),
+        ]));
+        let mut buf = bytes::BytesMut::new();
+        f.serialize(&mut buf);
+        let (parsed, _) = parse(&buf).unwrap().unwrap();
+        assert_eq!(parsed, f);
+    }
 }

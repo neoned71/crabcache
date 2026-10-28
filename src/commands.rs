@@ -1,5 +1,5 @@
 use crate::db::{self, Value};
-use crate::state::{ServerState, PubSub};
+use crate::state::{PubSub, ServerState};
 use bytes::Bytes;
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::Arc;
@@ -49,7 +49,10 @@ fn args(cmd: &Frame) -> Option<Vec<Bytes>> {
 }
 
 fn wrong_arity(cmd: &str) -> Frame {
-    Frame::Error(format!("ERR wrong number of arguments for '{}' command", cmd))
+    Frame::Error(format!(
+        "ERR wrong number of arguments for '{}' command",
+        cmd
+    ))
 }
 
 fn ok() -> Frame {
@@ -68,11 +71,7 @@ fn int(n: i64) -> Frame {
     Frame::Integer(n)
 }
 
-pub async fn dispatch(
-    state: &ServerState,
-    ctx: &mut ConnContext,
-    frame: Frame,
-) -> Vec<Frame> {
+pub async fn dispatch(state: &ServerState, ctx: &mut ConnContext, frame: Frame) -> Vec<Frame> {
     // If in multi mode and command not control, queue it.
     let arr = match frame.to_command_args() {
         Some(a) if !a.is_empty() => a,
@@ -91,12 +90,21 @@ pub async fn dispatch(
     let args = &arr[1..];
 
     // auth check
-    if state.requirepass.is_some() && !ctx.authenticated && name != "AUTH" && name != "HELLO" && name != "QUIT" && name != "PING" {
+    if state.requirepass.is_some()
+        && !ctx.authenticated
+        && name != "AUTH"
+        && name != "HELLO"
+        && name != "QUIT"
+        && name != "PING"
+    {
         return vec![err("NOAUTH Authentication required.")];
     }
 
     // multi queuing
-    let is_control = matches!(name.as_str(), "MULTI" | "EXEC" | "DISCARD" | "WATCH" | "UNWATCH" | "QUIT");
+    let is_control = matches!(
+        name.as_str(),
+        "MULTI" | "EXEC" | "DISCARD" | "WATCH" | "UNWATCH" | "QUIT"
+    );
     if ctx.multi.is_some() && !is_control {
         // queue raw frame? We need re-execute later. Store the original frame.
         // We stored args; reconstruct a frame array.
@@ -122,7 +130,9 @@ pub async fn dispatch(
             }
         }
         "ECHO" => {
-            if args.len() != 1 { return vec![wrong_arity("echo")]; }
+            if args.len() != 1 {
+                return vec![wrong_arity("echo")];
+            }
             vec![Frame::BulkString(Some(args[0].clone()))]
         }
         "HELLO" => {
@@ -135,12 +145,30 @@ pub async fn dispatch(
             // return server info map (resp3) or simple
             if ctx.protocol >= 3 {
                 let pairs = vec![
-                    (Frame::SimpleString("server".into()), Frame::SimpleString("crabcache".into())),
-                    (Frame::SimpleString("version".into()), Frame::SimpleString("0.1.0".into())),
-                    (Frame::SimpleString("proto".into()), Frame::Integer(ctx.protocol)),
-                    (Frame::SimpleString("id".into()), Frame::Integer(ctx.id as i64)),
-                    (Frame::SimpleString("mode".into()), Frame::SimpleString("standalone".into())),
-                    (Frame::SimpleString("role".into()), Frame::SimpleString("master".into())),
+                    (
+                        Frame::SimpleString("server".into()),
+                        Frame::SimpleString("crabcache".into()),
+                    ),
+                    (
+                        Frame::SimpleString("version".into()),
+                        Frame::SimpleString("0.1.0".into()),
+                    ),
+                    (
+                        Frame::SimpleString("proto".into()),
+                        Frame::Integer(ctx.protocol),
+                    ),
+                    (
+                        Frame::SimpleString("id".into()),
+                        Frame::Integer(ctx.id as i64),
+                    ),
+                    (
+                        Frame::SimpleString("mode".into()),
+                        Frame::SimpleString("standalone".into()),
+                    ),
+                    (
+                        Frame::SimpleString("role".into()),
+                        Frame::SimpleString("master".into()),
+                    ),
                 ];
                 vec![Frame::Map(pairs)]
             } else {
@@ -151,9 +179,12 @@ pub async fn dispatch(
             vec![Frame::SimpleString("OK".into())]
         }
         "AUTH" => {
-            if args.is_empty() { return vec![wrong_arity("auth")]; }
-            let pass = String::from_utf8_lossy(&args[args.len()-1]);
-            if state.requirepass.as_ref() == Some(&pass.to_string()) || state.requirepass.is_none() {
+            if args.is_empty() {
+                return vec![wrong_arity("auth")];
+            }
+            let pass = String::from_utf8_lossy(&args[args.len() - 1]);
+            if state.requirepass.as_ref() == Some(&pass.to_string()) || state.requirepass.is_none()
+            {
                 ctx.authenticated = true;
                 vec![ok()]
             } else {
@@ -161,7 +192,9 @@ pub async fn dispatch(
             }
         }
         "SELECT" => {
-            if args.len() != 1 { return vec![wrong_arity("select")]; }
+            if args.len() != 1 {
+                return vec![wrong_arity("select")];
+            }
             let n: usize = match String::from_utf8_lossy(&args[0]).parse() {
                 Ok(v) => v,
                 Err(_) => return vec![err("ERR invalid DB index")],
@@ -182,10 +215,17 @@ pub async fn dispatch(
             vec![int(db.len() as i64)]
         }
         "KEYS" => {
-            let pattern = if args.is_empty() { "*".to_string() } else { String::from_utf8_lossy(&args[0]).to_string() };
+            let pattern = if args.is_empty() {
+                "*".to_string()
+            } else {
+                String::from_utf8_lossy(&args[0]).to_string()
+            };
             let db = db_of(state, ctx);
             let keys = db.keys();
-            let filtered: Vec<Bytes> = keys.into_iter().filter(|k| glob_match(&pattern, &String::from_utf8_lossy(k))).collect();
+            let filtered: Vec<Bytes> = keys
+                .into_iter()
+                .filter(|k| glob_match(&pattern, &String::from_utf8_lossy(k)))
+                .collect();
             let mut out = Vec::new();
             for k in filtered {
                 out.push(Frame::BulkString(Some(k)));
@@ -194,7 +234,10 @@ pub async fn dispatch(
         }
         "SCAN" => {
             // basic: SCAN cursor [MATCH pattern] [COUNT n]
-            let cursor: usize = args.get(0).and_then(|b| String::from_utf8_lossy(b).parse().ok()).unwrap_or(0);
+            let cursor: usize = args
+                .get(0)
+                .and_then(|b| String::from_utf8_lossy(b).parse().ok())
+                .unwrap_or(0);
             let db = db_of(state, ctx);
             let keys = db.keys();
             // return all in one go for simplicity, cursor 0
@@ -208,7 +251,9 @@ pub async fn dispatch(
             ]))]
         }
         "TYPE" => {
-            if args.len() != 1 { return vec![wrong_arity("type")]; }
+            if args.len() != 1 {
+                return vec![wrong_arity("type")];
+            }
             let db = db_of(state, ctx);
             match db.get(&args[0]) {
                 None => vec![Frame::SimpleString("none".into())],
@@ -225,25 +270,35 @@ pub async fn dispatch(
             }
         }
         "EXISTS" => {
-            if args.is_empty() { return vec![wrong_arity("exists")]; }
+            if args.is_empty() {
+                return vec![wrong_arity("exists")];
+            }
             let db = db_of(state, ctx);
             let mut c = 0i64;
             for k in args {
-                if db.exists(k) { c += 1; }
+                if db.exists(k) {
+                    c += 1;
+                }
             }
             vec![int(c)]
         }
         "DEL" | "UNLINK" => {
-            if args.is_empty() { return vec![wrong_arity("del")]; }
+            if args.is_empty() {
+                return vec![wrong_arity("del")];
+            }
             let db = db_of(state, ctx);
             let mut c = 0i64;
             for k in args {
-                if db.remove(k) { c += 1; }
+                if db.remove(k) {
+                    c += 1;
+                }
             }
             vec![int(c)]
         }
         "RENAME" => {
-            if args.len() != 2 { return vec![wrong_arity("rename")]; }
+            if args.len() != 2 {
+                return vec![wrong_arity("rename")];
+            }
             let db = db_of(state, ctx);
             match db.get(&args[0]) {
                 Some(e) => {
@@ -255,9 +310,13 @@ pub async fn dispatch(
             }
         }
         "RENAMENX" => {
-            if args.len() != 2 { return vec![wrong_arity("renamenx")]; }
+            if args.len() != 2 {
+                return vec![wrong_arity("renamenx")];
+            }
             let db = db_of(state, ctx);
-            if db.exists(&args[1]) { return vec![int(0)]; }
+            if db.exists(&args[1]) {
+                return vec![int(0)];
+            }
             match db.get(&args[0]) {
                 Some(e) => {
                     db.store.insert(args[1].clone(), e);
@@ -270,13 +329,17 @@ pub async fn dispatch(
         // Strings
         "SET" => cmd_set(state, ctx, args).await,
         "GET" => {
-            if args.len() != 1 { return vec![wrong_arity("get")]; }
+            if args.len() != 1 {
+                return vec![wrong_arity("get")];
+            }
             let db = db_of(state, ctx);
             match db.get(&args[0]) {
                 None => vec![nil()],
                 Some(e) => match e.value {
                     Value::String(b) => vec![Frame::BulkString(Some(b))],
-                    _ => vec![err("WRONGTYPE Operation against a key holding the wrong kind of value")],
+                    _ => vec![err(
+                        "WRONGTYPE Operation against a key holding the wrong kind of value",
+                    )],
                 },
             }
         }
@@ -288,27 +351,37 @@ pub async fn dispatch(
                     None => out.push(Frame::BulkString(None)),
                     Some(e) => match e.value {
                         Value::String(b) => out.push(Frame::BulkString(Some(b))),
-                        _ => out.push(err("WRONGTYPE Operation against a key holding the wrong kind of value")),
+                        _ => out.push(err(
+                            "WRONGTYPE Operation against a key holding the wrong kind of value",
+                        )),
                     },
                 }
             }
             vec![Frame::Array(Some(out))]
         }
         "MSET" => {
-            if args.len() < 2 || args.len() % 2 != 0 { return vec![wrong_arity("mset")]; }
+            if args.len() < 2 || args.len() % 2 != 0 {
+                return vec![wrong_arity("mset")];
+            }
             let db = db_of(state, ctx);
             let mut i = 0;
             while i < args.len() {
-                db.store.insert(args[i].clone(), crate::db::Entry { value: Value::String(args[i+1].clone()), expires: None });
+                db.store.insert(
+                    args[i].clone(),
+                    crate::db::Entry {
+                        value: Value::String(args[i + 1].clone()),
+                        expires: None,
+                    },
+                );
                 i += 2;
             }
             vec![ok()]
         }
-        "INCR" | "DECR" | "INCRBY" | "DECRBY" => {
-            cmd_incr(state, ctx, &name, args).await
-        }
+        "INCR" | "DECR" | "INCRBY" | "DECRBY" => cmd_incr(state, ctx, &name, args).await,
         "INCRBYFLOAT" => {
-            if args.len() != 2 { return vec![wrong_arity("incrbyfloat")]; }
+            if args.len() != 2 {
+                return vec![wrong_arity("incrbyfloat")];
+            }
             let db = db_of(state, ctx);
             let inc: f64 = match String::from_utf8_lossy(&args[1]).parse() {
                 Ok(v) => v,
@@ -322,28 +395,55 @@ pub async fn dispatch(
                         Ok(v) => v,
                         Err(_) => return vec![err("ERR value is not a valid float")],
                     },
-                    _ => return vec![err("WRONGTYPE Operation against a key holding the wrong kind of value")],
+                    _ => {
+                        return vec![err(
+                            "WRONGTYPE Operation against a key holding the wrong kind of value",
+                        )];
+                    }
                 },
             };
             let newv = cur + inc;
             // format like redis: remove trailing zeros
             let s = format_float(newv);
-            db.store.insert(args[0].clone(), crate::db::Entry { value: Value::String(Bytes::from(s.clone())), expires: None });
+            db.store.insert(
+                args[0].clone(),
+                crate::db::Entry {
+                    value: Value::String(Bytes::from(s.clone())),
+                    expires: None,
+                },
+            );
             vec![Frame::BulkString(Some(Bytes::from(s)))]
         }
         "APPEND" => {
-            if args.len() != 2 { return vec![wrong_arity("append")]; }
+            if args.len() != 2 {
+                return vec![wrong_arity("append")];
+            }
             let db = db_of(state, ctx);
             let mut entry = db.get(&args[0]);
             let newlen = match &mut entry {
                 Some(e) => match &mut e.value {
-                    Value::String(b) => { let mut v = b.to_vec(); v.extend_from_slice(&args[1]); *b = Bytes::from(v); b.len() as i64 }
-                    _ => return vec![err("WRONGTYPE Operation against a key holding the wrong kind of value")],
+                    Value::String(b) => {
+                        let mut v = b.to_vec();
+                        v.extend_from_slice(&args[1]);
+                        *b = Bytes::from(v);
+                        b.len() as i64
+                    }
+                    _ => {
+                        return vec![err(
+                            "WRONGTYPE Operation against a key holding the wrong kind of value",
+                        )];
+                    }
                 },
                 None => {
                     let b = args[1].clone();
                     let l = b.len() as i64;
-                    db.store.insert(args[0].clone(), crate::db::Entry { value: Value::String(b), expires: None });
+                    db.store.insert(
+                        args[0].clone(),
+                        crate::db::Entry {
+                            value: Value::String(b),
+                            expires: None,
+                        },
+                    );
                     l
                 }
             };
@@ -356,25 +456,42 @@ pub async fn dispatch(
             vec![int(newlen)]
         }
         "STRLEN" => {
-            if args.len() != 1 { return vec![wrong_arity("strlen")]; }
+            if args.len() != 1 {
+                return vec![wrong_arity("strlen")];
+            }
             let db = db_of(state, ctx);
             match db.get(&args[0]) {
                 None => vec![int(0)],
                 Some(e) => match e.value {
                     Value::String(b) => vec![int(b.len() as i64)],
-                    _ => vec![err("WRONGTYPE Operation against a key holding the wrong kind of value")],
+                    _ => vec![err(
+                        "WRONGTYPE Operation against a key holding the wrong kind of value",
+                    )],
                 },
             }
         }
         "GETSET" => {
-            if args.len() != 2 { return vec![wrong_arity("getset")]; }
+            if args.len() != 2 {
+                return vec![wrong_arity("getset")];
+            }
             let db = db_of(state, ctx);
-            let old = db.get(&args[0]).map(|e| match e.value { Value::String(b) => Frame::BulkString(Some(b)), _ => nil() });
-            db.store.insert(args[0].clone(), crate::db::Entry { value: Value::String(args[1].clone()), expires: None });
+            let old = db.get(&args[0]).map(|e| match e.value {
+                Value::String(b) => Frame::BulkString(Some(b)),
+                _ => nil(),
+            });
+            db.store.insert(
+                args[0].clone(),
+                crate::db::Entry {
+                    value: Value::String(args[1].clone()),
+                    expires: None,
+                },
+            );
             vec![old.unwrap_or_else(nil)]
         }
         "GETDEL" => {
-            if args.len() != 1 { return vec![wrong_arity("getdel")]; }
+            if args.len() != 1 {
+                return vec![wrong_arity("getdel")];
+            }
             let db = db_of(state, ctx);
             let old = db.get(&args[0]);
             db.remove(&args[0]);
@@ -388,7 +505,9 @@ pub async fn dispatch(
         }
         "GETEX" => {
             // GETEX key [EX s|PX ms|EXAT ts|PXAT tsms|PERSIST]
-            if args.is_empty() { return vec![wrong_arity("getex")]; }
+            if args.is_empty() {
+                return vec![wrong_arity("getex")];
+            }
             let db = db_of(state, ctx);
             let entry = db.get(&args[0]);
             // parse options
@@ -398,23 +517,32 @@ pub async fn dispatch(
                 let opt = String::from_utf8_lossy(&args[i]).to_uppercase();
                 match opt.as_str() {
                     "EX" => {
-                        let s: i64 = String::from_utf8_lossy(&args[i+1]).parse().unwrap_or(0);
-                        new_exp = Some(Some(Instant::now() + std::time::Duration::from_secs(s as u64)));
+                        let s: i64 = String::from_utf8_lossy(&args[i + 1]).parse().unwrap_or(0);
+                        new_exp = Some(Some(
+                            Instant::now() + std::time::Duration::from_secs(s as u64),
+                        ));
                         i += 2;
                     }
                     "PX" => {
-                        let ms: i64 = String::from_utf8_lossy(&args[i+1]).parse().unwrap_or(0);
-                        new_exp = Some(Some(Instant::now() + std::time::Duration::from_millis(ms as u64)));
+                        let ms: i64 = String::from_utf8_lossy(&args[i + 1]).parse().unwrap_or(0);
+                        new_exp = Some(Some(
+                            Instant::now() + std::time::Duration::from_millis(ms as u64),
+                        ));
                         i += 2;
                     }
                     "PERSIST" => {
                         new_exp = Some(None);
                         i += 1;
                     }
-                    _ => { i += 1; }
+                    _ => {
+                        i += 1;
+                    }
                 }
             }
-            let val = entry.as_ref().and_then(|e| match &e.value { Value::String(b) => Some(b.clone()), _ => None });
+            let val = entry.as_ref().and_then(|e| match &e.value {
+                Value::String(b) => Some(b.clone()),
+                _ => None,
+            });
             if let Some(e) = entry {
                 let mut ne = e.clone();
                 if let Some(x) = new_exp {
@@ -422,24 +550,47 @@ pub async fn dispatch(
                 }
                 db.store.insert(args[0].clone(), ne);
             }
-            vec![match val { Some(b) => Frame::BulkString(Some(b)), None => nil() }]
+            vec![match val {
+                Some(b) => Frame::BulkString(Some(b)),
+                None => nil(),
+            }]
         }
         "SETNX" => {
-            if args.len() != 2 { return vec![wrong_arity("setnx")]; }
+            if args.len() != 2 {
+                return vec![wrong_arity("setnx")];
+            }
             let db = db_of(state, ctx);
             if db.exists(&args[0]) {
                 vec![int(0)]
             } else {
-                db.store.insert(args[0].clone(), crate::db::Entry { value: Value::String(args[1].clone()), expires: None });
+                db.store.insert(
+                    args[0].clone(),
+                    crate::db::Entry {
+                        value: Value::String(args[1].clone()),
+                        expires: None,
+                    },
+                );
                 vec![int(1)]
             }
         }
         "SETEX" | "PSETEX" => {
-            if args.len() != 3 { return vec![wrong_arity("setex")]; }
+            if args.len() != 3 {
+                return vec![wrong_arity("setex")];
+            }
             let db = db_of(state, ctx);
             let secs_or_ms: i64 = String::from_utf8_lossy(&args[1]).parse().unwrap_or(0);
-            let dur = if name == "SETEX" { std::time::Duration::from_secs(secs_or_ms as u64) } else { std::time::Duration::from_millis(secs_or_ms as u64) };
-            db.store.insert(args[0].clone(), crate::db::Entry { value: Value::String(args[2].clone()), expires: Some(Instant::now() + dur) });
+            let dur = if name == "SETEX" {
+                std::time::Duration::from_secs(secs_or_ms as u64)
+            } else {
+                std::time::Duration::from_millis(secs_or_ms as u64)
+            };
+            db.store.insert(
+                args[0].clone(),
+                crate::db::Entry {
+                    value: Value::String(args[2].clone()),
+                    expires: Some(Instant::now() + dur),
+                },
+            );
             vec![ok()]
         }
         "SET" => cmd_set(state, ctx, args).await,
@@ -449,7 +600,9 @@ pub async fn dispatch(
             cmd_expire(state, ctx, &name, args).await
         }
         "TTL" | "PTTL" => {
-            if args.len() != 1 { return vec![wrong_arity("ttl")]; }
+            if args.len() != 1 {
+                return vec![wrong_arity("ttl")];
+            }
             let db = db_of(state, ctx);
             let ms = db.ttl_ms(&args[0]);
             let v = if name == "TTL" {
@@ -459,14 +612,22 @@ pub async fn dispatch(
             };
             // for non-existent -2, no ttl -1 (already in ms units)
             let out = if name == "TTL" {
-                if ms == -2 { -2 } else if ms == -1 { -1 } else { ms / 1000 }
+                if ms == -2 {
+                    -2
+                } else if ms == -1 {
+                    -1
+                } else {
+                    ms / 1000
+                }
             } else {
                 ms
             };
             vec![int(out)]
         }
         "PERSIST" => {
-            if args.len() != 1 { return vec![wrong_arity("persist")]; }
+            if args.len() != 1 {
+                return vec![wrong_arity("persist")];
+            }
             let db = db_of(state, ctx);
             vec![int(if db.persist(&args[0]) { 1 } else { 0 })]
         }
@@ -475,18 +636,24 @@ pub async fn dispatch(
         "LPUSH" | "RPUSH" | "LPUSHX" | "RPUSHX" => cmd_list_push(state, ctx, &name, args).await,
         "LPOP" | "RPOP" => cmd_list_pop(state, ctx, &name, args).await,
         "LLEN" => {
-            if args.len() != 1 { return vec![wrong_arity("llen")]; }
+            if args.len() != 1 {
+                return vec![wrong_arity("llen")];
+            }
             let db = db_of(state, ctx);
             match db.get(&args[0]) {
                 None => vec![int(0)],
                 Some(e) => match e.value {
                     Value::List(l) => vec![int(l.len() as i64)],
-                    _ => vec![err("WRONGTYPE Operation against a key holding the wrong kind of value")],
+                    _ => vec![err(
+                        "WRONGTYPE Operation against a key holding the wrong kind of value",
+                    )],
                 },
             }
         }
         "LRANGE" => {
-            if args.len() != 3 { return vec![wrong_arity("lrange")]; }
+            if args.len() != 3 {
+                return vec![wrong_arity("lrange")];
+            }
             let db = db_of(state, ctx);
             let start: i64 = String::from_utf8_lossy(&args[1]).parse().unwrap_or(0);
             let stop: i64 = String::from_utf8_lossy(&args[2]).parse().unwrap_or(-1);
@@ -495,9 +662,17 @@ pub async fn dispatch(
                 Some(e) => match e.value {
                     Value::List(l) => {
                         let len = l.len() as i64;
-                        let s = if start < 0 { (len + start).max(0) } else { start.min(len) };
-                        let mut st = if stop < 0 { (len + stop).max(-1) } else { stop.min(len-1) };
-                        if st < s { 
+                        let s = if start < 0 {
+                            (len + start).max(0)
+                        } else {
+                            start.min(len)
+                        };
+                        let mut st = if stop < 0 {
+                            (len + stop).max(-1)
+                        } else {
+                            stop.min(len - 1)
+                        };
+                        if st < s {
                             vec![Frame::Array(Some(vec![]))]
                         } else {
                             let mut out = Vec::new();
@@ -509,12 +684,16 @@ pub async fn dispatch(
                             vec![Frame::Array(Some(out))]
                         }
                     }
-                    _ => vec![err("WRONGTYPE Operation against a key holding the wrong kind of value")],
+                    _ => vec![err(
+                        "WRONGTYPE Operation against a key holding the wrong kind of value",
+                    )],
                 },
             }
         }
         "LINDEX" => {
-            if args.len() != 2 { return vec![wrong_arity("lindex")]; }
+            if args.len() != 2 {
+                return vec![wrong_arity("lindex")];
+            }
             let db = db_of(state, ctx);
             let idx: i64 = String::from_utf8_lossy(&args[1]).parse().unwrap_or(0);
             match db.get(&args[0]) {
@@ -523,14 +702,20 @@ pub async fn dispatch(
                     Value::List(l) => {
                         let len = l.len() as i64;
                         let i = if idx < 0 { len + idx } else { idx };
-                        if i < 0 || i >= len { vec![nil()] } else { vec![Frame::BulkString(Some(l[i as usize].clone()))] }
+                        if i < 0 || i >= len {
+                            vec![nil()]
+                        } else {
+                            vec![Frame::BulkString(Some(l[i as usize].clone()))]
+                        }
                     }
                     _ => vec![err("WRONGTYPE...")],
                 },
             }
         }
         "LSET" => {
-            if args.len() != 3 { return vec![wrong_arity("lset")]; }
+            if args.len() != 3 {
+                return vec![wrong_arity("lset")];
+            }
             let db = db_of(state, ctx);
             let idx: i64 = String::from_utf8_lossy(&args[1]).parse().unwrap_or(0);
             match db.get(&args[0]) {
@@ -539,7 +724,9 @@ pub async fn dispatch(
                     Value::List(l) => {
                         let len = l.len() as i64;
                         let i = if idx < 0 { len + idx } else { idx };
-                        if i < 0 || i >= len { return vec![err("ERR index out of range")]; }
+                        if i < 0 || i >= len {
+                            return vec![err("ERR index out of range")];
+                        }
                         l[i as usize] = args[2].clone();
                         db.store.insert(args[0].clone(), e);
                         vec![ok()]
@@ -549,7 +736,9 @@ pub async fn dispatch(
             }
         }
         "LREM" => {
-            if args.len() != 3 { return vec![wrong_arity("lrem")]; }
+            if args.len() != 3 {
+                return vec![wrong_arity("lrem")];
+            }
             let db = db_of(state, ctx);
             let count: i64 = String::from_utf8_lossy(&args[1]).parse().unwrap_or(0);
             let val = &args[2];
@@ -562,13 +751,24 @@ pub async fn dispatch(
                             // remove all
                             let mut i = 0;
                             while i < l.len() {
-                                if l[i] == *val { l.remove(i); removed += 1; } else { i += 1; }
+                                if l[i] == *val {
+                                    l.remove(i);
+                                    removed += 1;
+                                } else {
+                                    i += 1;
+                                }
                             }
                         } else if count > 0 {
                             let mut i = 0;
                             let mut rem = count;
                             while i < l.len() && rem > 0 {
-                                if l[i] == *val { l.remove(i); removed += 1; rem -= 1; } else { i += 1; }
+                                if l[i] == *val {
+                                    l.remove(i);
+                                    removed += 1;
+                                    rem -= 1;
+                                } else {
+                                    i += 1;
+                                }
                             }
                         } else {
                             // from tail
@@ -576,7 +776,11 @@ pub async fn dispatch(
                             let mut i = l.len();
                             while i > 0 && rem > 0 {
                                 i -= 1;
-                                if l[i] == *val { l.remove(i); removed += 1; rem -= 1; }
+                                if l[i] == *val {
+                                    l.remove(i);
+                                    removed += 1;
+                                    rem -= 1;
+                                }
                             }
                         }
                         db.store.insert(args[0].clone(), e);
@@ -587,7 +791,9 @@ pub async fn dispatch(
             }
         }
         "LTRIM" => {
-            if args.len() != 3 { return vec![wrong_arity("ltrim")]; }
+            if args.len() != 3 {
+                return vec![wrong_arity("ltrim")];
+            }
             let db = db_of(state, ctx);
             let start: i64 = String::from_utf8_lossy(&args[1]).parse().unwrap_or(0);
             let stop: i64 = String::from_utf8_lossy(&args[2]).parse().unwrap_or(-1);
@@ -596,10 +802,25 @@ pub async fn dispatch(
                 Some(mut e) => match &mut e.value {
                     Value::List(l) => {
                         let len = l.len() as i64;
-                        let s = if start < 0 { (len + start).max(0) } else { start.min(len) } as usize;
-                        let mut st = if stop < 0 { (len + stop).max(-1) } else { stop.min(len-1) };
-                        if st < s as i64 { st = s as i64 - 1; }
-                        let new: VecDeque<Bytes> = l.iter().skip(s).take((st as usize + 1).saturating_sub(s)).cloned().collect();
+                        let s = if start < 0 {
+                            (len + start).max(0)
+                        } else {
+                            start.min(len)
+                        } as usize;
+                        let mut st = if stop < 0 {
+                            (len + stop).max(-1)
+                        } else {
+                            stop.min(len - 1)
+                        };
+                        if st < s as i64 {
+                            st = s as i64 - 1;
+                        }
+                        let new: VecDeque<Bytes> = l
+                            .iter()
+                            .skip(s)
+                            .take((st as usize + 1).saturating_sub(s))
+                            .cloned()
+                            .collect();
                         *l = new;
                         db.store.insert(args[0].clone(), e);
                         vec![ok()]
@@ -611,32 +832,58 @@ pub async fn dispatch(
 
         // Sets
         "SADD" => {
-            if args.len() < 2 { return vec![wrong_arity("sadd")]; }
+            if args.len() < 2 {
+                return vec![wrong_arity("sadd")];
+            }
             let db = db_of(state, ctx);
             let mut added = 0i64;
-            match db.get(&args[0]) {
-                None => {
-                    let mut set = HashSet::new();
-                    for m in &args[1..] { if set.insert(m.clone()) { added += 1; } }
-                    db.store.insert(args[0].clone(), crate::db::Entry { value: Value::Set(set), expires: None });
-                }
-                Some(mut e) => match &mut e.value {
-                    Value::Set(s) => {
-                        for m in &args[1..] { if s.insert(m.clone()) { added += 1; } }
-                        db.store.insert(args[0].clone(), e);
+            if let Some(mut e) = db.store.get_mut(&args[0]) {
+                if e.is_expired() {
+                    drop(e);
+                    db.store.remove(&args[0]);
+                } else {
+                    match &mut e.value {
+                        Value::Set(s) => {
+                            for m in &args[1..] {
+                                if s.insert(m.clone()) {
+                                    added += 1;
+                                }
+                            }
+                            return vec![int(added)];
+                        }
+                        _ => return vec![err("WRONGTYPE...")],
                     }
-                    _ => return vec![err("WRONGTYPE...")],
-                },
+                }
             }
+            // create
+            let mut set = HashSet::new();
+            for m in &args[1..] {
+                if set.insert(m.clone()) {
+                    added += 1;
+                }
+            }
+            db.store.insert(
+                args[0].clone(),
+                crate::db::Entry {
+                    value: Value::Set(set),
+                    expires: None,
+                },
+            );
             vec![int(added)]
         }
         "SREM" => {
-            if args.len() < 2 { return vec![wrong_arity("srem")]; }
+            if args.len() < 2 {
+                return vec![wrong_arity("srem")];
+            }
             let db = db_of(state, ctx);
             let mut removed = 0i64;
             if let Some(mut e) = db.get(&args[0]) {
                 if let Value::Set(s) = &mut e.value {
-                    for m in &args[1..] { if s.remove(m) { removed += 1; } }
+                    for m in &args[1..] {
+                        if s.remove(m) {
+                            removed += 1;
+                        }
+                    }
                     db.store.insert(args[0].clone(), e);
                 } else {
                     return vec![err("WRONGTYPE...")];
@@ -645,13 +892,18 @@ pub async fn dispatch(
             vec![int(removed)]
         }
         "SMEMBERS" => {
-            if args.len() != 1 { return vec![wrong_arity("smembers")]; }
+            if args.len() != 1 {
+                return vec![wrong_arity("smembers")];
+            }
             let db = db_of(state, ctx);
             match db.get(&args[0]) {
                 None => vec![Frame::Array(Some(vec![]))],
                 Some(e) => match e.value {
                     Value::Set(s) => {
-                        let out: Vec<Frame> = s.iter().map(|m| Frame::BulkString(Some(m.clone()))).collect();
+                        let out: Vec<Frame> = s
+                            .iter()
+                            .map(|m| Frame::BulkString(Some(m.clone())))
+                            .collect();
                         vec![Frame::Array(Some(out))]
                     }
                     _ => vec![err("WRONGTYPE...")],
@@ -659,7 +911,9 @@ pub async fn dispatch(
             }
         }
         "SCARD" => {
-            if args.len() != 1 { return vec![wrong_arity("scard")]; }
+            if args.len() != 1 {
+                return vec![wrong_arity("scard")];
+            }
             let db = db_of(state, ctx);
             match db.get(&args[0]) {
                 None => vec![int(0)],
@@ -670,7 +924,9 @@ pub async fn dispatch(
             }
         }
         "SISMEMBER" => {
-            if args.len() != 2 { return vec![wrong_arity("sismember")]; }
+            if args.len() != 2 {
+                return vec![wrong_arity("sismember")];
+            }
             let db = db_of(state, ctx);
             match db.get(&args[0]) {
                 None => vec![int(0)],
@@ -681,14 +937,23 @@ pub async fn dispatch(
             }
         }
         "SPOP" => {
-            if args.is_empty() || args.len() > 2 { return vec![wrong_arity("spop")]; }
+            if args.is_empty() || args.len() > 2 {
+                return vec![wrong_arity("spop")];
+            }
             let db = db_of(state, ctx);
-            let count: i64 = args.get(1).and_then(|b| String::from_utf8_lossy(b).parse().ok()).unwrap_or(1);
+            let count: i64 = args
+                .get(1)
+                .and_then(|b| String::from_utf8_lossy(b).parse().ok())
+                .unwrap_or(1);
             // single vs multi
             let single = args.len() == 1;
             match db.get(&args[0]) {
                 None => {
-                    if single { vec![nil()] } else { vec![Frame::Array(Some(vec![]))] }
+                    if single {
+                        vec![nil()]
+                    } else {
+                        vec![Frame::Array(Some(vec![]))]
+                    }
                 }
                 Some(mut e) => match &mut e.value {
                     Value::Set(s) => {
@@ -697,13 +962,22 @@ pub async fn dispatch(
                             if let Some(m) = s.iter().next().cloned() {
                                 s.remove(&m);
                                 popped.push(m);
-                            } else { break; }
+                            } else {
+                                break;
+                            }
                         }
                         db.store.insert(args[0].clone(), e);
                         if single {
-                            if popped.is_empty() { vec![nil()] } else { vec![Frame::BulkString(Some(popped[0].clone()))] }
+                            if popped.is_empty() {
+                                vec![nil()]
+                            } else {
+                                vec![Frame::BulkString(Some(popped[0].clone()))]
+                            }
                         } else {
-                            let out: Vec<Frame> = popped.into_iter().map(|m| Frame::BulkString(Some(m))).collect();
+                            let out: Vec<Frame> = popped
+                                .into_iter()
+                                .map(|m| Frame::BulkString(Some(m)))
+                                .collect();
                             vec![Frame::Array(Some(out))]
                         }
                     }
@@ -714,35 +988,52 @@ pub async fn dispatch(
 
         // Hashes
         "HSET" => {
-            if args.len() < 3 || (args.len()-1) % 2 != 0 { return vec![wrong_arity("hset")]; }
+            if args.len() < 3 || (args.len() - 1) % 2 != 0 {
+                return vec![wrong_arity("hset")];
+            }
             let db = db_of(state, ctx);
             let mut added = 0i64;
-            match db.get(&args[0]) {
-                None => {
-                    let mut h = HashMap::new();
-                    let mut i = 1;
-                    while i < args.len() {
-                        if h.insert(args[i].clone(), args[i+1].clone()).is_none() { added += 1; }
-                        i += 2;
-                    }
-                    db.store.insert(args[0].clone(), crate::db::Entry { value: Value::Hash(h), expires: None });
-                }
-                Some(mut e) => match &mut e.value {
-                    Value::Hash(h) => {
-                        let mut i = 1;
-                        while i < args.len() {
-                            if h.insert(args[i].clone(), args[i+1].clone()).is_none() { added += 1; }
-                            i += 2;
+            if let Some(mut e) = db.store.get_mut(&args[0]) {
+                if e.is_expired() {
+                    drop(e);
+                    db.store.remove(&args[0]);
+                } else {
+                    match &mut e.value {
+                        Value::Hash(h) => {
+                            let mut i = 1;
+                            while i < args.len() {
+                                if h.insert(args[i].clone(), args[i + 1].clone()).is_none() {
+                                    added += 1;
+                                }
+                                i += 2;
+                            }
+                            return vec![int(added)];
                         }
-                        db.store.insert(args[0].clone(), e);
+                        _ => return vec![err("WRONGTYPE...")],
                     }
-                    _ => return vec![err("WRONGTYPE...")],
-                },
+                }
             }
+            let mut h = HashMap::new();
+            let mut i = 1;
+            while i < args.len() {
+                if h.insert(args[i].clone(), args[i + 1].clone()).is_none() {
+                    added += 1;
+                }
+                i += 2;
+            }
+            db.store.insert(
+                args[0].clone(),
+                crate::db::Entry {
+                    value: Value::Hash(h),
+                    expires: None,
+                },
+            );
             vec![int(added)]
         }
         "HGET" => {
-            if args.len() != 2 { return vec![wrong_arity("hget")]; }
+            if args.len() != 2 {
+                return vec![wrong_arity("hget")];
+            }
             let db = db_of(state, ctx);
             match db.get(&args[0]) {
                 None => vec![nil()],
@@ -756,7 +1047,9 @@ pub async fn dispatch(
             }
         }
         "HMGET" => {
-            if args.len() < 2 { return vec![wrong_arity("hmget")]; }
+            if args.len() < 2 {
+                return vec![wrong_arity("hmget")];
+            }
             let db = db_of(state, ctx);
             let mut out = Vec::new();
             if let Some(e) = db.get(&args[0]) {
@@ -771,12 +1064,16 @@ pub async fn dispatch(
                     return vec![err("WRONGTYPE...")];
                 }
             } else {
-                for _ in &args[1..] { out.push(nil()); }
+                for _ in &args[1..] {
+                    out.push(nil());
+                }
             }
             vec![Frame::Array(Some(out))]
         }
         "HGETALL" => {
-            if args.len() != 1 { return vec![wrong_arity("hgetall")]; }
+            if args.len() != 1 {
+                return vec![wrong_arity("hgetall")];
+            }
             let db = db_of(state, ctx);
             match db.get(&args[0]) {
                 None => vec![Frame::Array(Some(vec![]))],
@@ -794,13 +1091,17 @@ pub async fn dispatch(
             }
         }
         "HDEL" => {
-            if args.len() < 2 { return vec![wrong_arity("hdel")]; }
+            if args.len() < 2 {
+                return vec![wrong_arity("hdel")];
+            }
             let db = db_of(state, ctx);
             let mut removed = 0i64;
             if let Some(mut e) = db.get(&args[0]) {
                 if let Value::Hash(h) = &mut e.value {
                     for f in &args[1..] {
-                        if h.remove(f).is_some() { removed += 1; }
+                        if h.remove(f).is_some() {
+                            removed += 1;
+                        }
                     }
                     db.store.insert(args[0].clone(), e);
                 } else {
@@ -810,7 +1111,9 @@ pub async fn dispatch(
             vec![int(removed)]
         }
         "HEXISTS" => {
-            if args.len() != 2 { return vec![wrong_arity("hexists")]; }
+            if args.len() != 2 {
+                return vec![wrong_arity("hexists")];
+            }
             let db = db_of(state, ctx);
             match db.get(&args[0]) {
                 None => vec![int(0)],
@@ -821,7 +1124,9 @@ pub async fn dispatch(
             }
         }
         "HLEN" => {
-            if args.len() != 1 { return vec![wrong_arity("hlen")]; }
+            if args.len() != 1 {
+                return vec![wrong_arity("hlen")];
+            }
             let db = db_of(state, ctx);
             match db.get(&args[0]) {
                 None => vec![int(0)],
@@ -832,16 +1137,22 @@ pub async fn dispatch(
             }
         }
         "HKEYS" | "HVALS" => {
-            if args.len() != 1 { return vec![wrong_arity("hkeys")]; }
+            if args.len() != 1 {
+                return vec![wrong_arity("hkeys")];
+            }
             let db = db_of(state, ctx);
             match db.get(&args[0]) {
                 None => vec![Frame::Array(Some(vec![]))],
                 Some(e) => match e.value {
                     Value::Hash(h) => {
                         let out: Vec<Frame> = if name == "HKEYS" {
-                            h.keys().map(|k| Frame::BulkString(Some(k.clone()))).collect()
+                            h.keys()
+                                .map(|k| Frame::BulkString(Some(k.clone())))
+                                .collect()
                         } else {
-                            h.values().map(|v| Frame::BulkString(Some(v.clone()))).collect()
+                            h.values()
+                                .map(|v| Frame::BulkString(Some(v.clone())))
+                                .collect()
                         };
                         vec![Frame::Array(Some(out))]
                     }
@@ -850,19 +1161,30 @@ pub async fn dispatch(
             }
         }
         "HINCRBY" => {
-            if args.len() != 3 { return vec![wrong_arity("hincrby")]; }
+            if args.len() != 3 {
+                return vec![wrong_arity("hincrby")];
+            }
             let db = db_of(state, ctx);
             let inc: i64 = String::from_utf8_lossy(&args[2]).parse().unwrap_or(0);
             match db.get(&args[0]) {
                 None => {
                     let mut h = HashMap::new();
                     h.insert(args[1].clone(), Bytes::from(inc.to_string()));
-                    db.store.insert(args[0].clone(), crate::db::Entry { value: Value::Hash(h), expires: None });
+                    db.store.insert(
+                        args[0].clone(),
+                        crate::db::Entry {
+                            value: Value::Hash(h),
+                            expires: None,
+                        },
+                    );
                     vec![int(inc)]
                 }
                 Some(mut e) => match &mut e.value {
                     Value::Hash(h) => {
-                        let cur: i64 = h.get(&args[1]).and_then(|b| String::from_utf8_lossy(b).parse().ok()).unwrap_or(0);
+                        let cur: i64 = h
+                            .get(&args[1])
+                            .and_then(|b| String::from_utf8_lossy(b).parse().ok())
+                            .unwrap_or(0);
                         let newv = cur + inc;
                         h.insert(args[1].clone(), Bytes::from(newv.to_string()));
                         db.store.insert(args[0].clone(), e);
@@ -876,7 +1198,9 @@ pub async fn dispatch(
         // Sorted sets
         "ZADD" => cmd_zadd(state, ctx, args).await,
         "ZREM" => {
-            if args.len() < 2 { return vec![wrong_arity("zrem")]; }
+            if args.len() < 2 {
+                return vec![wrong_arity("zrem")];
+            }
             let db = db_of(state, ctx);
             let mut removed = 0i64;
             if let Some(mut e) = db.get(&args[0]) {
@@ -895,7 +1219,9 @@ pub async fn dispatch(
             vec![int(removed)]
         }
         "ZSCORE" => {
-            if args.len() != 2 { return vec![wrong_arity("zscore")]; }
+            if args.len() != 2 {
+                return vec![wrong_arity("zscore")];
+            }
             let db = db_of(state, ctx);
             match db.get(&args[0]) {
                 None => vec![nil()],
@@ -909,7 +1235,9 @@ pub async fn dispatch(
             }
         }
         "ZCARD" => {
-            if args.len() != 1 { return vec![wrong_arity("zcard")]; }
+            if args.len() != 1 {
+                return vec![wrong_arity("zcard")];
+            }
             let db = db_of(state, ctx);
             match db.get(&args[0]) {
                 None => vec![int(0)],
@@ -920,7 +1248,9 @@ pub async fn dispatch(
             }
         }
         "ZRANK" | "ZREVRANK" => {
-            if args.len() != 2 { return vec![wrong_arity("zrank")]; }
+            if args.len() != 2 {
+                return vec![wrong_arity("zrank")];
+            }
             let db = db_of(state, ctx);
             let rev = name == "ZREVRANK";
             match db.get(&args[0]) {
@@ -931,13 +1261,22 @@ pub async fn dispatch(
                         let mut found = false;
                         let mut r = 0i64;
                         for (_, m) in ordered.iter() {
-                            if *m == args[1] { found = true; rank = r; break; }
+                            if *m == args[1] {
+                                found = true;
+                                rank = r;
+                                break;
+                            }
                             r += 1;
                         }
-                        if !found { vec![nil()] }
-                        else {
+                        if !found {
+                            vec![nil()]
+                        } else {
                             let total = ordered.len() as i64;
-                            if rev { vec![int(total - 1 - rank)] } else { vec![int(rank)] }
+                            if rev {
+                                vec![int(total - 1 - rank)]
+                            } else {
+                                vec![int(rank)]
+                            }
                         }
                     }
                     _ => vec![err("WRONGTYPE...")],
@@ -948,7 +1287,9 @@ pub async fn dispatch(
             cmd_zrange(state, ctx, &name, args).await
         }
         "ZCOUNT" => {
-            if args.len() != 3 { return vec![wrong_arity("zcount")]; }
+            if args.len() != 3 {
+                return vec![wrong_arity("zcount")];
+            }
             let db = db_of(state, ctx);
             let (min, max, min_excl, max_excl) = parse_score_range(&args[1], &args[2]);
             match db.get(&args[0]) {
@@ -958,7 +1299,9 @@ pub async fn dispatch(
                         let mut c = 0i64;
                         for (sc, _) in ordered.iter() {
                             let v = sc.0;
-                            if score_in_range(v, min, max, min_excl, max_excl) { c += 1; }
+                            if score_in_range(v, min, max, min_excl, max_excl) {
+                                c += 1;
+                            }
                         }
                         vec![int(c)]
                     }
@@ -967,7 +1310,9 @@ pub async fn dispatch(
             }
         }
         "ZINCRBY" => {
-            if args.len() != 3 { return vec![wrong_arity("zincrby")]; }
+            if args.len() != 3 {
+                return vec![wrong_arity("zincrby")];
+            }
             let db = db_of(state, ctx);
             let inc: f64 = String::from_utf8_lossy(&args[1]).parse().unwrap_or(0.0);
             let member = &args[2];
@@ -977,7 +1322,13 @@ pub async fn dispatch(
                     let mut ordered = BTreeSet::new();
                     scores.insert(member.clone(), inc);
                     ordered.insert((ordered_float::OrderedFloat(inc), member.clone()));
-                    db.store.insert(args[0].clone(), crate::db::Entry { value: Value::ZSet { scores, ordered }, expires: None });
+                    db.store.insert(
+                        args[0].clone(),
+                        crate::db::Entry {
+                            value: Value::ZSet { scores, ordered },
+                            expires: None,
+                        },
+                    );
                     vec![Frame::BulkString(Some(Bytes::from(format_float(inc))))]
                 }
                 Some(mut e) => match &mut e.value {
@@ -999,7 +1350,9 @@ pub async fn dispatch(
 
         // Pub/Sub
         "PUBLISH" => {
-            if args.len() != 2 { return vec![wrong_arity("publish")]; }
+            if args.len() != 2 {
+                return vec![wrong_arity("publish")];
+            }
             let n = state.pubsub.publish(&args[0], args[1].clone());
             vec![int(n as i64)]
         }
@@ -1088,11 +1441,16 @@ pub async fn dispatch(
             vec![Frame::BulkString(Some(Bytes::from(info)))]
         }
         "CONFIG" => {
-            if args.is_empty() { return vec![wrong_arity("config")]; }
+            if args.is_empty() {
+                return vec![wrong_arity("config")];
+            }
             let sub = String::from_utf8_lossy(&args[0]).to_uppercase();
             match sub.as_str() {
                 "GET" => {
-                    let pat = args.get(1).map(|b| String::from_utf8_lossy(b).to_string()).unwrap_or_else(|| "*".into());
+                    let pat = args
+                        .get(1)
+                        .map(|b| String::from_utf8_lossy(b).to_string())
+                        .unwrap_or_else(|| "*".into());
                     let cfg = state.config.read();
                     let mut out = Vec::new();
                     for (k, v) in cfg.iter() {
@@ -1104,7 +1462,9 @@ pub async fn dispatch(
                     vec![Frame::Array(Some(out))]
                 }
                 "SET" => {
-                    if args.len() < 3 { return vec![wrong_arity("config")]; }
+                    if args.len() < 3 {
+                        return vec![wrong_arity("config")];
+                    }
                     let k = String::from_utf8_lossy(&args[1]).to_string();
                     let v = String::from_utf8_lossy(&args[2]).to_string();
                     state.config.write().insert(k, v);
@@ -1115,23 +1475,42 @@ pub async fn dispatch(
             }
         }
         "CLIENT" => {
-            let sub = args.get(0).map(|b| String::from_utf8_lossy(b).to_uppercase()).unwrap_or_default();
+            let sub = args
+                .get(0)
+                .map(|b| String::from_utf8_lossy(b).to_uppercase())
+                .unwrap_or_default();
             match sub.as_str() {
                 "SETNAME" => {
-                    if args.len() != 2 { return vec![wrong_arity("client")]; }
+                    if args.len() != 2 {
+                        return vec![wrong_arity("client")];
+                    }
                     ctx.name = String::from_utf8_lossy(&args[1]).to_string();
                     vec![ok()]
                 }
-                "GETNAME" => vec![Frame::BulkString(if ctx.name.is_empty() { None } else { Some(Bytes::from(ctx.name.clone())) })],
+                "GETNAME" => vec![Frame::BulkString(if ctx.name.is_empty() {
+                    None
+                } else {
+                    Some(Bytes::from(ctx.name.clone()))
+                })],
                 "ID" => vec![int(ctx.id as i64)],
-                "LIST" => vec![Frame::BulkString(Some(Bytes::from(format!("id={} name={}\n", ctx.id, ctx.name))))],
-                "INFO" => vec![Frame::BulkString(Some(Bytes::from(format!("id={} name={}\n", ctx.id, ctx.name))))],
+                "LIST" => vec![Frame::BulkString(Some(Bytes::from(format!(
+                    "id={} name={}\n",
+                    ctx.id, ctx.name
+                ))))],
+                "INFO" => vec![Frame::BulkString(Some(Bytes::from(format!(
+                    "id={} name={}\n",
+                    ctx.id, ctx.name
+                ))))],
                 _ => vec![ok()],
             }
         }
         "COMMAND" => {
             // return empty array or count
-            if args.get(0).map(|b| String::from_utf8_lossy(b).to_uppercase()) == Some("COUNT".to_string()) {
+            if args
+                .get(0)
+                .map(|b| String::from_utf8_lossy(b).to_uppercase())
+                == Some("COUNT".to_string())
+            {
                 vec![int(200)]
             } else {
                 // return array of command names minimal
@@ -1172,7 +1551,9 @@ pub async fn dispatch(
 
 async fn cmd_set(state: &ServerState, ctx: &ConnContext, args: &[Bytes]) -> Vec<Frame> {
     // SET key value [EX s] [PX ms] [EXAT ts] [PXAT tsms] [NX|XX] [GET] [KEEPTTL]
-    if args.len() < 2 { return vec![wrong_arity("set")]; }
+    if args.len() < 2 {
+        return vec![wrong_arity("set")];
+    }
     let db = db_of(state, ctx);
     let key = &args[0];
     let val = &args[1];
@@ -1187,43 +1568,65 @@ async fn cmd_set(state: &ServerState, ctx: &ConnContext, args: &[Bytes]) -> Vec<
         let opt = String::from_utf8_lossy(&args[i]).to_uppercase();
         match opt.as_str() {
             "EX" => {
-                let s: i64 = String::from_utf8_lossy(&args[i+1]).parse().unwrap_or(0);
+                let s: i64 = String::from_utf8_lossy(&args[i + 1]).parse().unwrap_or(0);
                 ex = Some(Instant::now() + std::time::Duration::from_secs(s as u64));
                 i += 2;
             }
             "PX" => {
-                let ms: i64 = String::from_utf8_lossy(&args[i+1]).parse().unwrap_or(0);
+                let ms: i64 = String::from_utf8_lossy(&args[i + 1]).parse().unwrap_or(0);
                 ex = Some(Instant::now() + std::time::Duration::from_millis(ms as u64));
                 i += 2;
             }
             "EXAT" => {
-                let ts: i64 = String::from_utf8_lossy(&args[i+1]).parse().unwrap_or(0);
+                let ts: i64 = String::from_utf8_lossy(&args[i + 1]).parse().unwrap_or(0);
                 let now = db::unix_ms_now() as i64;
                 let delta_ms = (ts * 1000) - now;
-                ex = Some(Instant::now() + std::time::Duration::from_millis(delta_ms.max(0) as u64));
+                ex =
+                    Some(Instant::now() + std::time::Duration::from_millis(delta_ms.max(0) as u64));
                 i += 2;
             }
             "PXAT" => {
-                let ts: i64 = String::from_utf8_lossy(&args[i+1]).parse().unwrap_or(0);
+                let ts: i64 = String::from_utf8_lossy(&args[i + 1]).parse().unwrap_or(0);
                 let now = db::unix_ms_now() as i64;
                 let delta_ms = ts - now;
-                ex = Some(Instant::now() + std::time::Duration::from_millis(delta_ms.max(0) as u64));
+                ex =
+                    Some(Instant::now() + std::time::Duration::from_millis(delta_ms.max(0) as u64));
                 i += 2;
             }
-            "NX" => { nx = true; i += 1; }
-            "XX" => { xx = true; i += 1; }
-            "GET" => { get = true; i += 1; }
-            "KEEPTTL" => { keepttl = true; i += 1; }
-            _ => { i += 1; }
+            "NX" => {
+                nx = true;
+                i += 1;
+            }
+            "XX" => {
+                xx = true;
+                i += 1;
+            }
+            "GET" => {
+                get = true;
+                i += 1;
+            }
+            "KEEPTTL" => {
+                keepttl = true;
+                i += 1;
+            }
+            _ => {
+                i += 1;
+            }
         }
     }
 
     let exists = db.exists(key);
-    if nx && exists { 
+    if nx && exists {
         if get {
             // return old value
-            let old = db.get(key).and_then(|e| match e.value { Value::String(b) => Some(b), _ => None });
-            return vec![match old { Some(b) => Frame::BulkString(Some(b)), None => nil() }];
+            let old = db.get(key).and_then(|e| match e.value {
+                Value::String(b) => Some(b),
+                _ => None,
+            });
+            return vec![match old {
+                Some(b) => Frame::BulkString(Some(b)),
+                None => nil(),
+            }];
         }
         return vec![nil()];
     }
@@ -1235,8 +1638,13 @@ async fn cmd_set(state: &ServerState, ctx: &ConnContext, args: &[Bytes]) -> Vec<
     }
 
     let old_val = if get {
-        db.get(key).and_then(|e| match e.value { Value::String(b) => Some(b), _ => None })
-    } else { None };
+        db.get(key).and_then(|e| match e.value {
+            Value::String(b) => Some(b),
+            _ => None,
+        })
+    } else {
+        None
+    };
 
     // keepttl: preserve expiry if not explicitly set
     let expires = if keepttl && ex.is_none() {
@@ -1245,20 +1653,38 @@ async fn cmd_set(state: &ServerState, ctx: &ConnContext, args: &[Bytes]) -> Vec<
         ex
     };
 
-    db.store.insert(key.clone(), crate::db::Entry { value: Value::String(val.clone()), expires });
+    db.store.insert(
+        key.clone(),
+        crate::db::Entry {
+            value: Value::String(val.clone()),
+            expires,
+        },
+    );
 
     if get {
-        vec![match old_val { Some(b) => Frame::BulkString(Some(b)), None => nil() }]
+        vec![match old_val {
+            Some(b) => Frame::BulkString(Some(b)),
+            None => nil(),
+        }]
     } else {
         vec![ok()]
     }
 }
 
-async fn cmd_expire(state: &ServerState, ctx: &ConnContext, name: &str, args: &[Bytes]) -> Vec<Frame> {
-    if args.len() < 2 { return vec![wrong_arity("expire")]; }
+async fn cmd_expire(
+    state: &ServerState,
+    ctx: &ConnContext,
+    name: &str,
+    args: &[Bytes],
+) -> Vec<Frame> {
+    if args.len() < 2 {
+        return vec![wrong_arity("expire")];
+    }
     let db = db_of(state, ctx);
     let key = &args[0];
-    if !db.exists(key) { return vec![int(0)]; }
+    if !db.exists(key) {
+        return vec![int(0)];
+    }
     let n: i64 = String::from_utf8_lossy(&args[1]).parse().unwrap_or(0);
     let when = match name {
         "EXPIRE" => Instant::now() + std::time::Duration::from_secs(n as u64),
@@ -1281,22 +1707,43 @@ async fn cmd_expire(state: &ServerState, ctx: &ConnContext, name: &str, args: &[
     vec![int(if ok { 1 } else { 0 })]
 }
 
-async fn cmd_incr(state: &ServerState, ctx: &ConnContext, name: &str, args: &[Bytes]) -> Vec<Frame> {
-    if args.is_empty() { return vec![wrong_arity("incr")]; }
+async fn cmd_incr(
+    state: &ServerState,
+    ctx: &ConnContext,
+    name: &str,
+    args: &[Bytes],
+) -> Vec<Frame> {
+    if args.is_empty() {
+        return vec![wrong_arity("incr")];
+    }
     let db = db_of(state, ctx);
     let key = &args[0];
     let delta: i64 = match name {
         "INCR" => 1,
         "DECR" => -1,
-        "INCRBY" => args.get(1).and_then(|b| String::from_utf8_lossy(b).parse().ok()).unwrap_or(0),
-        "DECRBY" => -(args.get(1).and_then(|b| String::from_utf8_lossy(b).parse().ok()).unwrap_or(0)),
+        "INCRBY" => args
+            .get(1)
+            .and_then(|b| String::from_utf8_lossy(b).parse().ok())
+            .unwrap_or(0),
+        "DECRBY" => {
+            -(args
+                .get(1)
+                .and_then(|b| String::from_utf8_lossy(b).parse().ok())
+                .unwrap_or(0))
+        }
         _ => 1,
     };
     // if extra arg for incrby
     let _ = args.get(1);
     match db.get(key) {
         None => {
-            db.store.insert(key.clone(), crate::db::Entry { value: Value::String(Bytes::from(delta.to_string())), expires: None });
+            db.store.insert(
+                key.clone(),
+                crate::db::Entry {
+                    value: Value::String(Bytes::from(delta.to_string())),
+                    expires: None,
+                },
+            );
             vec![int(delta)]
         }
         Some(mut e) => match &mut e.value {
@@ -1311,13 +1758,22 @@ async fn cmd_incr(state: &ServerState, ctx: &ConnContext, name: &str, args: &[By
                 db.store.insert(key.clone(), e);
                 vec![int(newv)]
             }
-            _ => vec![err("WRONGTYPE Operation against a key holding the wrong kind of value")],
+            _ => vec![err(
+                "WRONGTYPE Operation against a key holding the wrong kind of value",
+            )],
         },
     }
 }
 
-async fn cmd_list_push(state: &ServerState, ctx: &ConnContext, name: &str, args: &[Bytes]) -> Vec<Frame> {
-    if args.len() < 2 { return vec![wrong_arity("push")]; }
+async fn cmd_list_push(
+    state: &ServerState,
+    ctx: &ConnContext,
+    name: &str,
+    args: &[Bytes],
+) -> Vec<Frame> {
+    if args.len() < 2 {
+        return vec![wrong_arity("push")];
+    }
     let db = db_of(state, ctx);
     let key = &args[0];
     let vals = &args[1..];
@@ -1328,162 +1784,286 @@ async fn cmd_list_push(state: &ServerState, ctx: &ConnContext, name: &str, args:
         return vec![int(0)];
     }
 
-    let mut entry = db.get(key);
-    let len = match &mut entry {
-        None => {
-            let mut dq = VecDeque::new();
-            for v in vals {
-                if push_left { dq.push_front(v.clone()); } else { dq.push_back(v.clone()); }
-            }
-            let l = dq.len() as i64;
-            db.store.insert(key.clone(), crate::db::Entry { value: Value::List(dq), expires: None });
-            l
-        }
-        Some(e) => {
+    // mutate in place to avoid O(n) clone
+    if let Some(mut e) = db.store.get_mut(key) {
+        // expired?
+        if e.is_expired() {
+            drop(e);
+            db.store.remove(key); /* fall through */
+        } else {
             match &mut e.value {
                 Value::List(dq) => {
                     for v in vals {
-                        if push_left { dq.push_front(v.clone()); } else { dq.push_back(v.clone()); }
+                        if push_left {
+                            dq.push_front(v.clone());
+                        } else {
+                            dq.push_back(v.clone());
+                        }
                     }
                     let l = dq.len() as i64;
-                    db.store.insert(key.clone(), e.clone());
-                    l
+                    return vec![int(l)];
                 }
-                _ => return vec![err("WRONGTYPE Operation against a key holding the wrong kind of value")],
+                _ => {
+                    return vec![err(
+                        "WRONGTYPE Operation against a key holding the wrong kind of value",
+                    )];
+                }
             }
         }
-    };
-    // fix: if entry was Some, we already inserted; if None inserted. But in Some branch we inserted clone. OK.
-    let _ = entry;
-    vec![int(len)]
+    }
+
+    // create new
+    let mut dq = VecDeque::new();
+    for v in vals {
+        if push_left {
+            dq.push_front(v.clone());
+        } else {
+            dq.push_back(v.clone());
+        }
+    }
+    let l = dq.len() as i64;
+    db.store.insert(
+        key.clone(),
+        crate::db::Entry {
+            value: Value::List(dq),
+            expires: None,
+        },
+    );
+    vec![int(l)]
 }
 
-async fn cmd_list_pop(state: &ServerState, ctx: &ConnContext, name: &str, args: &[Bytes]) -> Vec<Frame> {
-    if args.is_empty() { return vec![wrong_arity("pop")]; }
+async fn cmd_list_pop(
+    state: &ServerState,
+    ctx: &ConnContext,
+    name: &str,
+    args: &[Bytes],
+) -> Vec<Frame> {
+    if args.is_empty() {
+        return vec![wrong_arity("pop")];
+    }
     let db = db_of(state, ctx);
     let key = &args[0];
-    let count: usize = args.get(1).and_then(|b| String::from_utf8_lossy(b).parse().ok()).unwrap_or(1);
+    let count: usize = args
+        .get(1)
+        .and_then(|b| String::from_utf8_lossy(b).parse().ok())
+        .unwrap_or(1);
     let multi = args.len() >= 2;
     let left = name.starts_with('L') || name.starts_with('l');
 
-    match db.get(key) {
-        None => {
-            if multi { vec![Frame::Array(Some(vec![]))] } else { vec![nil()] }
-        }
-        Some(mut e) => match &mut e.value {
-            Value::List(dq) => {
-                let mut popped = Vec::new();
-                for _ in 0..count {
-                    let v = if left { dq.pop_front() } else { dq.pop_back() };
-                    match v {
-                        Some(x) => popped.push(x),
-                        None => break,
+    // mutate in place
+    let mut popped = Vec::new();
+    let mut wrongtype = false;
+    let mut missing = false;
+    if let Some(mut e) = db.store.get_mut(key) {
+        if e.is_expired() {
+            drop(e);
+            db.store.remove(key);
+            missing = true;
+        } else {
+            match &mut e.value {
+                Value::List(dq) => {
+                    for _ in 0..count {
+                        let v = if left { dq.pop_front() } else { dq.pop_back() };
+                        match v {
+                            Some(x) => popped.push(x),
+                            None => break,
+                        }
+                    }
+                    let empty = dq.is_empty();
+                    drop(e);
+                    if empty {
+                        db.store.remove(key);
                     }
                 }
-                if dq.is_empty() {
-                    db.remove(key);
-                } else {
-                    db.store.insert(key.clone(), e);
-                }
-                if multi {
-                    let out: Vec<Frame> = popped.into_iter().map(|x| Frame::BulkString(Some(x))).collect();
-                    vec![Frame::Array(Some(out))]
-                } else {
-                    if popped.is_empty() { vec![nil()] } else { vec![Frame::BulkString(Some(popped[0].clone()))] }
+                _ => {
+                    wrongtype = true;
                 }
             }
-            _ => vec![err("WRONGTYPE Operation against a key holding the wrong kind of value")],
-        },
+        }
+    } else {
+        missing = true;
+    }
+    if wrongtype {
+        return vec![err(
+            "WRONGTYPE Operation against a key holding the wrong kind of value",
+        )];
+    }
+    if missing && popped.is_empty() {
+        if multi {
+            return vec![Frame::Array(Some(vec![]))];
+        } else {
+            return vec![nil()];
+        }
+    }
+    if multi {
+        let out: Vec<Frame> = popped
+            .into_iter()
+            .map(|x| Frame::BulkString(Some(x)))
+            .collect();
+        vec![Frame::Array(Some(out))]
+    } else {
+        if popped.is_empty() {
+            vec![nil()]
+        } else {
+            vec![Frame::BulkString(Some(popped[0].clone()))]
+        }
     }
 }
 
 async fn cmd_zadd(state: &ServerState, ctx: &ConnContext, args: &[Bytes]) -> Vec<Frame> {
-    if args.len() < 3 { return vec![wrong_arity("zadd")]; }
+    if args.len() < 3 {
+        return vec![wrong_arity("zadd")];
+    }
     let db = db_of(state, ctx);
     let key = &args[0];
     // parse options: NX/XX/GT/LT/CH/INCR
     let mut i = 1;
-    let mut nx = false; let mut xx = false; let mut ch = false; let mut incr = false;
+    let mut nx = false;
+    let mut xx = false;
+    let mut ch = false;
+    let mut incr = false;
     // skip options
     while i < args.len() {
         let opt = String::from_utf8_lossy(&args[i]).to_uppercase();
         match opt.as_str() {
-            "NX" => { nx = true; i += 1; }
-            "XX" => { xx = true; i += 1; }
-            "CH" => { ch = true; i += 1; }
-            "INCR" => { incr = true; i += 1; }
-            "GT" | "LT" => { i += 1; }
+            "NX" => {
+                nx = true;
+                i += 1;
+            }
+            "XX" => {
+                xx = true;
+                i += 1;
+            }
+            "CH" => {
+                ch = true;
+                i += 1;
+            }
+            "INCR" => {
+                incr = true;
+                i += 1;
+            }
+            "GT" | "LT" => {
+                i += 1;
+            }
             _ => break,
         }
     }
     // remaining must be score member pairs
     let pairs = &args[i..];
-    if pairs.len() % 2 != 0 { return vec![err("ERR syntax error")]; }
+    if pairs.len() % 2 != 0 {
+        return vec![err("ERR syntax error")];
+    }
 
     let mut added = 0i64;
     let mut changed = 0i64;
 
-    // load or create
-    let mut entry = db.get(key);
-    let mut scores: HashMap<Bytes, f64>;
-    let mut ordered: BTreeSet<(ordered_float::OrderedFloat<f64>, Bytes)>;
-    let mut existed = false;
-    if let Some(e) = &entry {
-        if let Value::ZSet { scores: s, ordered: o } = &e.value {
-            scores = s.clone();
-            ordered = o.clone();
-            existed = true;
-        } else {
-            return vec![err("WRONGTYPE Operation against a key holding the wrong kind of value")];
+    // expired check
+    if db.store.contains_key(key) {
+        if let Some(e) = db.store.get(key) {
+            if e.is_expired() {
+                drop(e);
+                db.store.remove(key);
+            }
         }
-    } else {
-        scores = HashMap::new();
-        ordered = BTreeSet::new();
+    }
+    // Determine if exists
+    let exists = db.store.contains_key(key);
+    // type check
+    if exists {
+        if let Some(e) = db.store.get(key) {
+            if !matches!(e.value, Value::ZSet { .. }) {
+                return vec![err(
+                    "WRONGTYPE Operation against a key holding the wrong kind of value",
+                )];
+            }
+        }
     }
 
+    // We'll mutate in place if exists, else build new then insert.
     let mut new_score_for_incr: Option<f64> = None;
     let mut j = 0;
-    while j < pairs.len() {
-        let score: f64 = match String::from_utf8_lossy(&pairs[j]).parse() {
-            Ok(v) => v,
-            Err(_) => return vec![err("ERR value is not a valid float")],
-        };
-        let member = pairs[j+1].clone();
-        let old = scores.get(&member).copied();
-        if incr && pairs.len() == 2 {
-            // INCR mode: only one pair
-            let cur = old.unwrap_or(0.0);
-            let nv = cur + score;
-            if let Some(s) = old {
-                ordered.remove(&(ordered_float::OrderedFloat(s), member.clone()));
+
+    if exists {
+        if let Some(mut e) = db.store.get_mut(key) {
+            if let Value::ZSet { scores, ordered } = &mut e.value {
+                while j < pairs.len() {
+                    let score: f64 = match String::from_utf8_lossy(&pairs[j]).parse() {
+                        Ok(v) => v,
+                        Err(_) => return vec![err("ERR value is not a valid float")],
+                    };
+                    let member = pairs[j + 1].clone();
+                    let old = scores.get(&member).copied();
+                    if incr && pairs.len() == 2 {
+                        let cur = old.unwrap_or(0.0);
+                        let nv = cur + score;
+                        if let Some(s) = old {
+                            ordered.remove(&(ordered_float::OrderedFloat(s), member.clone()));
+                        }
+                        scores.insert(member.clone(), nv);
+                        ordered.insert((ordered_float::OrderedFloat(nv), member.clone()));
+                        new_score_for_incr = Some(nv);
+                        break;
+                    }
+                    if nx && old.is_some() {
+                        j += 2;
+                        continue;
+                    }
+                    if xx && old.is_none() {
+                        j += 2;
+                        continue;
+                    }
+                    if old.is_some() {
+                        let os = old.unwrap();
+                        if os != score {
+                            ordered.remove(&(ordered_float::OrderedFloat(os), member.clone()));
+                            ordered.insert((ordered_float::OrderedFloat(score), member.clone()));
+                            scores.insert(member.clone(), score);
+                            changed += 1;
+                        }
+                    } else {
+                        scores.insert(member.clone(), score);
+                        ordered.insert((ordered_float::OrderedFloat(score), member.clone()));
+                        added += 1;
+                        changed += 1;
+                    }
+                    j += 2;
+                }
             }
-            scores.insert(member.clone(), nv);
-            ordered.insert((ordered_float::OrderedFloat(nv), member.clone()));
-            new_score_for_incr = Some(nv);
-            break;
         }
-        // apply nx/xx
-        if nx && old.is_some() { j += 2; continue; }
-        if xx && old.is_none() { j += 2; continue; }
-        // GT/LT not handled fully; skip
-        if old.is_some() {
-            let os = old.unwrap();
-            if os != score {
-                ordered.remove(&(ordered_float::OrderedFloat(os), member.clone()));
-                ordered.insert((ordered_float::OrderedFloat(score), member.clone()));
-                scores.insert(member.clone(), score);
-                changed += 1;
+    } else {
+        // build new
+        let mut scores = HashMap::new();
+        let mut ordered = BTreeSet::new();
+        while j < pairs.len() {
+            let score: f64 = match String::from_utf8_lossy(&pairs[j]).parse() {
+                Ok(v) => v,
+                Err(_) => return vec![err("ERR value is not a valid float")],
+            };
+            let member = pairs[j + 1].clone();
+            if incr && pairs.len() == 2 {
+                let nv = score;
+                scores.insert(member.clone(), nv);
+                ordered.insert((ordered_float::OrderedFloat(nv), member.clone()));
+                new_score_for_incr = Some(nv);
+                added = 1;
+                changed = 1;
+                break;
             }
-        } else {
+            if nx && false {}
             scores.insert(member.clone(), score);
             ordered.insert((ordered_float::OrderedFloat(score), member.clone()));
             added += 1;
             changed += 1;
+            j += 2;
         }
-        j += 2;
+        db.store.insert(
+            key.clone(),
+            crate::db::Entry {
+                value: Value::ZSet { scores, ordered },
+                expires: None,
+            },
+        );
     }
-
-    db.store.insert(key.clone(), crate::db::Entry { value: Value::ZSet { scores, ordered }, expires: None });
 
     if incr {
         return vec![match new_score_for_incr {
@@ -1495,8 +2075,15 @@ async fn cmd_zadd(state: &ServerState, ctx: &ConnContext, args: &[Bytes]) -> Vec
     vec![int(ret)]
 }
 
-async fn cmd_zrange(state: &ServerState, ctx: &ConnContext, name: &str, args: &[Bytes]) -> Vec<Frame> {
-    if args.len() < 3 { return vec![wrong_arity("zrange")]; }
+async fn cmd_zrange(
+    state: &ServerState,
+    ctx: &ConnContext,
+    name: &str,
+    args: &[Bytes],
+) -> Vec<Frame> {
+    if args.len() < 3 {
+        return vec![wrong_arity("zrange")];
+    }
     let db = db_of(state, ctx);
     let key = &args[0];
     let rev = name.contains("REV");
@@ -1515,16 +2102,26 @@ async fn cmd_zrange(state: &ServerState, ctx: &ConnContext, name: &str, args: &[
     while idx < args.len() {
         let opt = String::from_utf8_lossy(&args[idx]).to_uppercase();
         match opt.as_str() {
-            "WITHSCORES" => { withscores = true; idx += 1; }
-            "REV" => { /* already */ idx += 1; }
-            "BYSCORE" => { idx += 1; }
+            "WITHSCORES" => {
+                withscores = true;
+                idx += 1;
+            }
+            "REV" => {
+                /* already */
+                idx += 1;
+            }
+            "BYSCORE" => {
+                idx += 1;
+            }
             "LIMIT" => {
-                let off: i64 = String::from_utf8_lossy(&args[idx+1]).parse().unwrap_or(0);
-                let cnt: i64 = String::from_utf8_lossy(&args[idx+2]).parse().unwrap_or(0);
+                let off: i64 = String::from_utf8_lossy(&args[idx + 1]).parse().unwrap_or(0);
+                let cnt: i64 = String::from_utf8_lossy(&args[idx + 2]).parse().unwrap_or(0);
                 limit = Some((off, cnt));
                 idx += 3;
             }
-            _ => { idx += 1; }
+            _ => {
+                idx += 1;
+            }
         }
     }
 
@@ -1539,23 +2136,41 @@ async fn cmd_zrange(state: &ServerState, ctx: &ConnContext, name: &str, args: &[
         Some(e) => match e.value {
             Value::ZSet { ordered, .. } => {
                 // collect members in order
-                let mut members: Vec<(f64, Bytes)> = ordered.iter().map(|(s, m)| (s.0, m.clone())).collect();
-                if rev { members.reverse(); }
+                let mut members: Vec<(f64, Bytes)> =
+                    ordered.iter().map(|(s, m)| (s.0, m.clone())).collect();
+                if rev {
+                    members.reverse();
+                }
                 // filter by score or rank
                 let filtered: Vec<(f64, Bytes)> = if byscore {
                     let (min, max, min_excl, max_excl) = parse_score_range_str(&min_arg, &max_arg);
-                    members.into_iter().filter(|(sc, _)| score_in_range(*sc, min, max, min_excl, max_excl)).collect()
+                    members
+                        .into_iter()
+                        .filter(|(sc, _)| score_in_range(*sc, min, max, min_excl, max_excl))
+                        .collect()
                 } else {
                     // rank range
                     let len = members.len() as i64;
                     let start: i64 = min_arg.parse().unwrap_or(0);
                     let stop: i64 = max_arg.parse().unwrap_or(-1);
-                    let s = if start < 0 { (len + start).max(0) } else { start.min(len) } as usize;
-                    let mut st = if stop < 0 { (len + stop).max(-1) } else { stop.min(len - 1) };
-                    if st < s as i64 { 
+                    let s = if start < 0 {
+                        (len + start).max(0)
+                    } else {
+                        start.min(len)
+                    } as usize;
+                    let mut st = if stop < 0 {
+                        (len + stop).max(-1)
+                    } else {
+                        stop.min(len - 1)
+                    };
+                    if st < s as i64 {
                         vec![]
                     } else {
-                        members.into_iter().skip(s).take((st as usize + 1).saturating_sub(s)).collect()
+                        members
+                            .into_iter()
+                            .skip(s)
+                            .take((st as usize + 1).saturating_sub(s))
+                            .collect()
                     }
                 };
                 // apply limit
@@ -1563,7 +2178,11 @@ async fn cmd_zrange(state: &ServerState, ctx: &ConnContext, name: &str, args: &[
                     if cnt < 0 {
                         filtered
                     } else {
-                        filtered.into_iter().skip(off.max(0) as usize).take(cnt as usize).collect()
+                        filtered
+                            .into_iter()
+                            .skip(off.max(0) as usize)
+                            .take(cnt as usize)
+                            .collect()
                     }
                 } else {
                     filtered
@@ -1576,7 +2195,7 @@ async fn cmd_zrange(state: &ServerState, ctx: &ConnContext, name: &str, args: &[
                         out.push(Frame::BulkString(Some(Bytes::from(format_float(sc)))));
                     }
                 }
-                // If withscores, output should be flat list of member,score pairs? Redis returns array of members, or with scores flat. Actually ZRANGE ... WITHSCORES returns array where each element is [member, score]? 
+                // If withscores, output should be flat list of member,score pairs? Redis returns array of members, or with scores flat. Actually ZRANGE ... WITHSCORES returns array where each element is [member, score]?
                 // Redis 6.2+: ZRANGE returns array of members; WITHSCORES returns array of [member, score] arrays? Let's check: redis-cli ZRANGE z 0 -1 WITHSCORES returns flat? Actually returns list: member score member score (flat) in older; newer returns array of strings alternating? redis-cli prints them alternating. Protocol: array of bulk strings alternating member,score. We'll do flat.
                 vec![Frame::Array(Some(out))]
             }
@@ -1629,21 +2248,37 @@ fn glob_match(pattern: &str, text: &str) -> bool {
     // simple glob with * and ?
     // use recursive
     fn rec(p: &[u8], t: &[u8]) -> bool {
-        if p.is_empty() { return t.is_empty(); }
+        if p.is_empty() {
+            return t.is_empty();
+        }
         match p[0] {
             b'*' => {
                 // match zero or more
-                if p.len() == 1 { return true; }
+                if p.len() == 1 {
+                    return true;
+                }
                 for i in 0..=t.len() {
-                    if rec(&p[1..], &t[i..]) { return true; }
+                    if rec(&p[1..], &t[i..]) {
+                        return true;
+                    }
                 }
                 false
             }
             b'?' => {
-                if t.is_empty() { false } else { rec(&p[1..], &t[1..]) }
+                if t.is_empty() {
+                    false
+                } else {
+                    rec(&p[1..], &t[1..])
+                }
             }
             c => {
-                if t.is_empty() { false } else if t[0] == c { rec(&p[1..], &t[1..]) } else { false }
+                if t.is_empty() {
+                    false
+                } else if t[0] == c {
+                    rec(&p[1..], &t[1..])
+                } else {
+                    false
+                }
             }
         }
     }

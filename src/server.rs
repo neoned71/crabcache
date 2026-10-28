@@ -1,4 +1,4 @@
-use crate::commands::{dispatch, ConnContext};
+use crate::commands::{ConnContext, dispatch};
 use crate::protocol;
 use crate::state::ServerState;
 use bytes::{Buf, BytesMut};
@@ -103,4 +103,3 @@ fn next_id(state: &ServerState) -> u64 {
     *g += 1;
     id
 }
-
