@@ -856,7 +856,7 @@ pub async fn dispatch(state: &ServerState, ctx: &mut ConnContext, frame: Frame) 
                 }
             }
             // create
-            let mut set = HashSet::new();
+            let mut set = crate::db::SetEncoding::Small(Vec::new());
             for m in &args[1..] {
                 if set.insert(m.clone()) {
                     added += 1;
@@ -877,16 +877,21 @@ pub async fn dispatch(state: &ServerState, ctx: &mut ConnContext, frame: Frame) 
             }
             let db = db_of(state, ctx);
             let mut removed = 0i64;
-            if let Some(mut e) = db.get(&args[0]) {
-                if let Value::Set(s) = &mut e.value {
-                    for m in &args[1..] {
-                        if s.remove(m) {
-                            removed += 1;
-                        }
-                    }
-                    db.store.insert(args[0].clone(), e);
+            if let Some(mut e) = db.store.get_mut(&args[0]) {
+                if e.is_expired() {
+                    drop(e);
+                    db.store.remove(&args[0]);
                 } else {
-                    return vec![err("WRONGTYPE...")];
+                    match &mut e.value {
+                        Value::Set(s) => {
+                            for m in &args[1..] {
+                                if s.remove(m) {
+                                    removed += 1;
+                                }
+                            }
+                        }
+                        _ => return vec![err("WRONGTYPE...")],
+                    }
                 }
             }
             vec![int(removed)]
@@ -901,8 +906,9 @@ pub async fn dispatch(state: &ServerState, ctx: &mut ConnContext, frame: Frame) 
                 Some(e) => match e.value {
                     Value::Set(s) => {
                         let out: Vec<Frame> = s
-                            .iter()
-                            .map(|m| Frame::BulkString(Some(m.clone())))
+                            .iter_vec()
+                            .into_iter()
+                            .map(|m| Frame::BulkString(Some(m)))
                             .collect();
                         vec![Frame::Array(Some(out))]
                     }
@@ -959,8 +965,7 @@ pub async fn dispatch(state: &ServerState, ctx: &mut ConnContext, frame: Frame) 
                     Value::Set(s) => {
                         let mut popped = Vec::new();
                         for _ in 0..count {
-                            if let Some(m) = s.iter().next().cloned() {
-                                s.remove(&m);
+                            if let Some(m) = s.pop_one() {
                                 popped.push(m);
                             } else {
                                 break;
@@ -1013,7 +1018,7 @@ pub async fn dispatch(state: &ServerState, ctx: &mut ConnContext, frame: Frame) 
                     }
                 }
             }
-            let mut h = HashMap::new();
+            let mut h = crate::db::HashEncoding::Small(Vec::new());
             let mut i = 1;
             while i < args.len() {
                 if h.insert(args[i].clone(), args[i + 1].clone()).is_none() {
@@ -1080,9 +1085,9 @@ pub async fn dispatch(state: &ServerState, ctx: &mut ConnContext, frame: Frame) 
                 Some(e) => match e.value {
                     Value::Hash(h) => {
                         let mut out = Vec::new();
-                        for (k, v) in h.iter() {
-                            out.push(Frame::BulkString(Some(k.clone())));
-                            out.push(Frame::BulkString(Some(v.clone())));
+                        for (k, v) in h.pairs() {
+                            out.push(Frame::BulkString(Some(k)));
+                            out.push(Frame::BulkString(Some(v)));
                         }
                         vec![Frame::Array(Some(out))]
                     }
@@ -1096,16 +1101,21 @@ pub async fn dispatch(state: &ServerState, ctx: &mut ConnContext, frame: Frame) 
             }
             let db = db_of(state, ctx);
             let mut removed = 0i64;
-            if let Some(mut e) = db.get(&args[0]) {
-                if let Value::Hash(h) = &mut e.value {
-                    for f in &args[1..] {
-                        if h.remove(f).is_some() {
-                            removed += 1;
-                        }
-                    }
-                    db.store.insert(args[0].clone(), e);
+            if let Some(mut e) = db.store.get_mut(&args[0]) {
+                if e.is_expired() {
+                    drop(e);
+                    db.store.remove(&args[0]);
                 } else {
-                    return vec![err("WRONGTYPE...")];
+                    match &mut e.value {
+                        Value::Hash(h) => {
+                            for f in &args[1..] {
+                                if h.remove(f).is_some() {
+                                    removed += 1;
+                                }
+                            }
+                        }
+                        _ => return vec![err("WRONGTYPE...")],
+                    }
                 }
             }
             vec![int(removed)]
@@ -1147,11 +1157,13 @@ pub async fn dispatch(state: &ServerState, ctx: &mut ConnContext, frame: Frame) 
                     Value::Hash(h) => {
                         let out: Vec<Frame> = if name == "HKEYS" {
                             h.keys()
-                                .map(|k| Frame::BulkString(Some(k.clone())))
+                                .into_iter()
+                                .map(|k| Frame::BulkString(Some(k)))
                                 .collect()
                         } else {
                             h.values()
-                                .map(|v| Frame::BulkString(Some(v.clone())))
+                                .into_iter()
+                                .map(|v| Frame::BulkString(Some(v)))
                                 .collect()
                         };
                         vec![Frame::Array(Some(out))]
@@ -1168,7 +1180,7 @@ pub async fn dispatch(state: &ServerState, ctx: &mut ConnContext, frame: Frame) 
             let inc: i64 = String::from_utf8_lossy(&args[2]).parse().unwrap_or(0);
             match db.get(&args[0]) {
                 None => {
-                    let mut h = HashMap::new();
+                    let mut h = crate::db::HashEncoding::Small(Vec::new());
                     h.insert(args[1].clone(), Bytes::from(inc.to_string()));
                     db.store.insert(
                         args[0].clone(),
@@ -1183,7 +1195,7 @@ pub async fn dispatch(state: &ServerState, ctx: &mut ConnContext, frame: Frame) 
                     Value::Hash(h) => {
                         let cur: i64 = h
                             .get(&args[1])
-                            .and_then(|b| String::from_utf8_lossy(b).parse().ok())
+                            .and_then(|b| String::from_utf8_lossy(&b).parse().ok())
                             .unwrap_or(0);
                         let newv = cur + inc;
                         h.insert(args[1].clone(), Bytes::from(newv.to_string()));

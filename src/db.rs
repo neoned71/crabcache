@@ -10,12 +10,160 @@ use std::time::{Duration, Instant};
 pub enum Value {
     String(Bytes),
     List(VecDeque<Bytes>),
-    Set(HashSet<Bytes>),
-    Hash(HashMap<Bytes, Bytes>),
+    Set(SetEncoding),
+    Hash(HashEncoding),
     ZSet {
         scores: HashMap<Bytes, f64>,
         ordered: BTreeSet<(OrderedFloat<f64>, Bytes)>,
     },
+}
+
+#[derive(Debug, Clone)]
+pub enum SetEncoding {
+    Small(Vec<Bytes>),   // compact, linear scan; used for small sets
+    Large(HashSet<Bytes>),
+}
+
+#[derive(Debug, Clone)]
+pub enum HashEncoding {
+    Small(Vec<(Bytes, Bytes)>),
+    Large(HashMap<Bytes, Bytes>),
+}
+
+pub const SMALL_THRESHOLD: usize = 32;
+
+impl SetEncoding {
+    pub fn contains(&self, m: &Bytes) -> bool {
+        match self {
+            SetEncoding::Small(v) => v.iter().any(|x| x == m),
+            SetEncoding::Large(s) => s.contains(m),
+        }
+    }
+    pub fn len(&self) -> usize {
+        match self {
+            SetEncoding::Small(v) => v.len(),
+            SetEncoding::Large(s) => s.len(),
+        }
+    }
+    pub fn insert(&mut self, m: Bytes) -> bool {
+        match self {
+            SetEncoding::Small(v) => {
+                if v.iter().any(|x| x == &m) { return false; }
+                v.push(m);
+                if v.len() > SMALL_THRESHOLD {
+                    let mut s = HashSet::new();
+                    for x in v.drain(..) { s.insert(x); }
+                    *self = SetEncoding::Large(s);
+                }
+                true
+            }
+            SetEncoding::Large(s) => s.insert(m),
+        }
+    }
+    pub fn remove(&mut self, m: &Bytes) -> bool {
+        match self {
+            SetEncoding::Small(v) => {
+                if let Some(i) = v.iter().position(|x| x == m) {
+                    v.swap_remove(i);
+                    true
+                } else { false }
+            }
+            SetEncoding::Large(s) => s.remove(m),
+        }
+    }
+    pub fn iter_vec(&self) -> Vec<Bytes> {
+        match self {
+            SetEncoding::Small(v) => v.clone(),
+            SetEncoding::Large(s) => s.iter().cloned().collect(),
+        }
+    }
+    pub fn pop_one(&mut self) -> Option<Bytes> {
+        match self {
+            SetEncoding::Small(v) => {
+                if v.is_empty() { None } else { Some(v.swap_remove(0)) }
+            }
+            SetEncoding::Large(s) => {
+                let m = s.iter().next().cloned()?;
+                s.remove(&m);
+                Some(m)
+            }
+        }
+    }
+}
+
+impl HashEncoding {
+    pub fn get(&self, f: &Bytes) -> Option<Bytes> {
+        match self {
+            HashEncoding::Small(v) => v.iter().find(|(k,_)| k == f).map(|(_,v)| v.clone()),
+            HashEncoding::Large(m) => m.get(f).cloned(),
+        }
+    }
+    pub fn contains_key(&self, f: &Bytes) -> bool {
+        match self {
+            HashEncoding::Small(v) => v.iter().any(|(k,_)| k == f),
+            HashEncoding::Large(m) => m.contains_key(f),
+        }
+    }
+    pub fn len(&self) -> usize {
+        match self {
+            HashEncoding::Small(v) => v.len(),
+            HashEncoding::Large(m) => m.len(),
+        }
+    }
+    pub fn insert(&mut self, f: Bytes, v: Bytes) -> Option<Bytes> {
+        // returns old value if present
+        match self {
+            HashEncoding::Small(vec) => {
+                if let Some(i) = vec.iter().position(|(k,_)| k == &f) {
+                    let old = vec[i].1.clone();
+                    vec[i].1 = v;
+                    if vec.len() > SMALL_THRESHOLD {
+                        let mut m = HashMap::new();
+                        for (k,val) in vec.drain(..) { m.insert(k,val); }
+                        *self = HashEncoding::Large(m);
+                    }
+                    Some(old)
+                } else {
+                    vec.push((f, v));
+                    if vec.len() > SMALL_THRESHOLD {
+                        let mut m = HashMap::new();
+                        for (k,val) in vec.drain(..) { m.insert(k,val); }
+                        *self = HashEncoding::Large(m);
+                    }
+                    None
+                }
+            }
+            HashEncoding::Large(m) => m.insert(f, v),
+        }
+    }
+    pub fn remove(&mut self, f: &Bytes) -> Option<Bytes> {
+        match self {
+            HashEncoding::Small(v) => {
+                if let Some(i) = v.iter().position(|(k,_)| k == f) {
+                    Some(v.swap_remove(i).1)
+                } else { None }
+            }
+            HashEncoding::Large(m) => m.remove(f),
+        }
+    }
+    pub fn keys(&self) -> Vec<Bytes> {
+        match self {
+            HashEncoding::Small(v) => v.iter().map(|(k,_)| k.clone()).collect(),
+            HashEncoding::Large(m) => m.keys().cloned().collect(),
+        }
+    }
+    pub fn values(&self) -> Vec<Bytes> {
+        match self {
+            HashEncoding::Small(v) => v.iter().map(|(_,val)| val.clone()).collect(),
+            HashEncoding::Large(m) => m.values().cloned().collect(),
+        }
+    }
+    pub fn pairs(&self) -> Vec<(Bytes, Bytes)> {
+        match self {
+            HashEncoding::Small(v) => v.clone(),
+            HashEncoding::Large(m) => m.iter().map(|(k,v)| (k.clone(), v.clone())).collect(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
