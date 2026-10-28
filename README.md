@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/crabcache.png" alt="crabcache" width="420" />
+  <img src="assets/crabcache.png" alt="crabcache" width="100%" />
 </p>
 
 <p align="center">
@@ -243,29 +243,3 @@ MIT — see [LICENSE](LICENSE).
 - [Tokio](https://tokio.rs/), [DashMap](https://github.com/xacrimon/dashmap), [bytes](https://github.com/tokio-rs/bytes), [mimalloc](https://github.com/purpleprotocol/mimalloc_rust) — the foundation.
 - Inspired by `mini-redis` (Tokio's teaching example) and `reredis`.
 
----
-
-## 📣 LinkedIn post (ready to copy)
-
-> 🦀 I rebuilt Redis in Rust — and it's faster.
->
-> Over the last few days I wrote **crabcache**, a Redis-protocol-compatible in-memory store from scratch in Rust. It speaks RESP2/RESP3, so every existing Redis client (`redis-cli`, `redis-py`, `ioredis`, `go-redis`…) works unchanged.
->
-> The surprising part: in single-threaded mode it **beats redis-server** on throughput:
->
-> • SET 240k vs 190k rps (+26%)
-> • GET 233k vs 202k rps (+15%)
-> • ZADD 236k vs 194k rps (+22%)
-> • ~0.10 ms p50 latency vs ~0.21 ms
->
-> How? The big lesson was architectural, not micro-optimization: Redis is fast *because* it's single-threaded. Once I matched that model (one event loop, no lock contention), throughput jumped +67%. Micro-opts (AOF batching, mimalloc, compact encodings, in-place mutation) added only a few percent each.
->
-> What's implemented: strings, keys, TTL, lists, sets, hashes, sorted sets, pub/sub, MULTI/EXEC transactions, and AOF persistence with replay. MIT licensed.
->
-> What's NOT (yet): replication, cluster, Lua, streams, RDB. Single node only.
->
-> Repo: https://github.com/neoned71/crabcache
->
-> If you've ever wanted to read a Redis-like server end to end in a memory-safe language — or contribute a missing command — come take a look. Issues labeled "good first issue" are up.
->
-> #rust #redis #opensource #databases #performance
