@@ -22,6 +22,7 @@ ordered-float = "4"
 anyhow = "1"
 thiserror = "1"
 rand = "0.8"
+mimalloc = "0.1"
 
 [profile.release]
 opt-level = 3
