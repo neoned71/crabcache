@@ -6,6 +6,7 @@
 
 > A Redis-protocol-compatible in-memory data store, rebuilt from scratch in **Rust**.
 
+[![CI](https://github.com/neoned71/crabcache/actions/workflows/ci.yml/badge.svg)](https://github.com/neoned71/crabcache/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](#license)
 [![Rust](https://img.shields.io/badge/rust-stable-orange.svg)](https://www.rust-lang.org/)
 [![Redis protocol](https://img.shields.io/badge/protocol-RESP2%2FRESP3-red.svg)](https://redis.io/docs/reference/protocol-spec/)
@@ -56,13 +57,35 @@ workloads" — not yet a full replacement (see [Limitations](#limitations)).
   replayed to rebuild state. Enable with `--appendonly`.
 - RDB snapshots are not implemented yet (`SAVE`/`BGSAVE` are no-ops).
 
+## Install
+
+### From source (cargo)
+
+```sh
+cargo install --git https://github.com/neoned71/crabcache
+# or, from a clone:
+cargo install --path .
+```
+
+### Docker
+
+```sh
+docker build -t crabcache .
+docker run -p 6379:6379 -v crabcache-data:/data crabcache
+```
+
+### From a release binary
+
+Pre-built binaries for macOS/Linux/Windows are published on the
+[Releases](https://github.com/neoned71/crabcache/releases) page.
+
 ## Quick start
 
 ### Build
 
 ```sh
-git clone <this-repo>
-cd redisrs
+git clone https://github.com/neoned71/crabcache
+cd crabcache
 cargo build --release
 ```
 
@@ -102,6 +125,28 @@ only for now).
 ### Environment
 
 - `RUST_LOG=redisrs=debug` (or `info`, `trace`) for verbose logging.
+
+## Demo
+
+```sh
+$ crabcache --port 6379 &
+$ redis-cli -p 6379
+127.0.0.1:6379> SET hello world EX 60
+OK
+127.0.0.1:6379> GET hello
+"world"
+127.0.0.1:6379> LPUSH q a b c
+(integer) 3
+127.0.0.1:6379> RPOP q
+"a"
+127.0.0.1:6379> ZADD board 10 alice 20 bob
+(integer) 2
+127.0.0.1:6379> ZRANGE board 0 -1 WITHSCORES
+1) "alice"
+2) "10"
+3) "bob"
+4) "20"
+```
 
 ## Architecture
 
