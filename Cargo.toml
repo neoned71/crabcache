@@ -1,0 +1,29 @@
+[package]
+name = "redisrs"
+version = "0.1.0"
+edition = "2024"
+description = "A Redis-protocol-compatible in-memory data store written in Rust."
+license = "MIT"
+authors = ["redisrs contributors"]
+
+[[bin]]
+name = "redisrs"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+bytes = "1"
+clap = { version = "4", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+parking_lot = "0.12"
+dashmap = "6"
+ordered-float = "4"
+anyhow = "1"
+thiserror = "1"
+rand = "0.8"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
