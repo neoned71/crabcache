@@ -204,7 +204,7 @@ fn parse_bulk(data: &[u8]) -> Result<Option<(Frame, usize)>, String> {
     if data[data_end] != b'\r' || data[data_end + 1] != b'\n' {
         return Err("missing crlf after bulk".to_string());
     }
-    let bytes = Bytes::from(data[data_start..data_end].to_vec());
+    let bytes = Bytes::copy_from_slice(&data[data_start..data_end]);
     Ok(Some((Frame::BulkString(Some(bytes)), total)))
 }
 
