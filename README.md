@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/crabcache.png" alt="crabcache" width="420" />
+</p>
+
 # crabcache
 
 > A Redis-protocol-compatible in-memory data store, rebuilt from scratch in **Rust**.
