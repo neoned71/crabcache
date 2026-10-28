@@ -73,7 +73,6 @@ async fn handle_conn(state: Arc<ServerState>, socket: TcpStream) -> anyhow::Resu
                             let mut f = aof.lock();
                             use std::io::Write;
                             let _ = f.write_all(&buf2);
-                            let _ = f.flush();
                         }
                     }
                     let replies = dispatch(&state, &mut ctx, frame).await;

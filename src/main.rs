@@ -50,8 +50,21 @@ async fn main() -> anyhow::Result<()> {
             .append(true)
             .read(true)
             .open(&aof_path)?;
-        let aof = Arc::new(parking_lot::Mutex::new(file));
+        let buf = std::io::BufWriter::new(file);
+        let aof = Arc::new(parking_lot::Mutex::new(buf));
         state.aof = Some(aof.clone());
+
+        // periodic flush task (everysec, matching Redis default)
+        let aof2 = aof.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_millis(100));
+            loop {
+                interval.tick().await;
+                let mut f = aof2.lock();
+                use std::io::Write;
+                let _ = f.flush();
+            }
+        });
 
         // replay
         let mut f = std::fs::File::open(&aof_path)?;

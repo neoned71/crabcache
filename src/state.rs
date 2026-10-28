@@ -21,7 +21,7 @@ pub struct ServerState {
     pub dbfilename: String,
     pub appendonly: bool,
     pub appendfilename: String,
-    pub aof: Option<std::sync::Arc<parking_lot::Mutex<std::fs::File>>>,
+    pub aof: Option<std::sync::Arc<parking_lot::Mutex<std::io::BufWriter<std::fs::File>>>>,
     pub requirepass: Option<String>,
     pub next_client_id: Arc<RwLock<u64>>,
     pub pubsub: Arc<PubSub>,
