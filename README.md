@@ -126,28 +126,6 @@ only for now).
 
 - `RUST_LOG=redisrs=debug` (or `info`, `trace`) for verbose logging.
 
-## Demo
-
-```sh
-$ crabcache --port 6379 &
-$ redis-cli -p 6379
-127.0.0.1:6379> SET hello world EX 60
-OK
-127.0.0.1:6379> GET hello
-"world"
-127.0.0.1:6379> LPUSH q a b c
-(integer) 3
-127.0.0.1:6379> RPOP q
-"a"
-127.0.0.1:6379> ZADD board 10 alice 20 bob
-(integer) 2
-127.0.0.1:6379> ZRANGE board 0 -1 WITHSCORES
-1) "alice"
-2) "10"
-3) "bob"
-4) "20"
-```
-
 ## Architecture
 
 ```
