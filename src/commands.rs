@@ -1653,13 +1653,18 @@ async fn cmd_set(state: &ServerState, ctx: &ConnContext, args: &[Bytes]) -> Vec<
         ex
     };
 
-    db.store.insert(
-        key.clone(),
-        crate::db::Entry {
-            value: Value::String(val.clone()),
-            expires,
-        },
-    );
+    if let Some(mut e) = db.store.get_mut(key) {
+        e.value = Value::String(val.clone());
+        e.expires = expires;
+    } else {
+        db.store.insert(
+            key.clone(),
+            crate::db::Entry {
+                value: Value::String(val.clone()),
+                expires,
+            },
+        );
+    }
 
     if get {
         vec![match old_val {
@@ -1733,36 +1738,38 @@ async fn cmd_incr(
         }
         _ => 1,
     };
-    // if extra arg for incrby
-    let _ = args.get(1);
-    match db.get(key) {
-        None => {
-            db.store.insert(
-                key.clone(),
-                crate::db::Entry {
-                    value: Value::String(Bytes::from(delta.to_string())),
-                    expires: None,
-                },
-            );
-            vec![int(delta)]
-        }
-        Some(mut e) => match &mut e.value {
-            Value::String(b) => {
-                let cur: i64 = String::from_utf8_lossy(b).parse().unwrap_or(0);
-                // if parse fails, redis returns error; we'll just treat as 0? Better error.
-                if String::from_utf8_lossy(b).parse::<i64>().is_err() {
-                    return vec![err("ERR value is not an integer or out of range")];
+    // mutate in place
+    if let Some(mut e) = db.store.get_mut(key) {
+        if e.is_expired() {
+            drop(e);
+            db.store.remove(key);
+        } else {
+            match &mut e.value {
+                Value::String(b) => {
+                    if String::from_utf8_lossy(b).parse::<i64>().is_err() {
+                        return vec![err("ERR value is not an integer or out of range")];
+                    }
+                    let cur: i64 = String::from_utf8_lossy(b).parse().unwrap_or(0);
+                    let newv = cur + delta;
+                    *b = Bytes::from(newv.to_string());
+                    return vec![int(newv)];
                 }
-                let newv = cur + delta;
-                *b = Bytes::from(newv.to_string());
-                db.store.insert(key.clone(), e);
-                vec![int(newv)]
+                _ => {
+                    return vec![err(
+                        "WRONGTYPE Operation against a key holding the wrong kind of value",
+                    )]
+                }
             }
-            _ => vec![err(
-                "WRONGTYPE Operation against a key holding the wrong kind of value",
-            )],
-        },
+        }
     }
+    db.store.insert(
+        key.clone(),
+        crate::db::Entry {
+            value: Value::String(Bytes::from(delta.to_string())),
+            expires: None,
+        },
+    );
+    vec![int(delta)]
 }
 
 async fn cmd_list_push(
