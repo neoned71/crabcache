@@ -135,7 +135,7 @@ pub async fn dispatch(
             // return server info map (resp3) or simple
             if ctx.protocol >= 3 {
                 let pairs = vec![
-                    (Frame::SimpleString("server".into()), Frame::SimpleString("redisrs".into())),
+                    (Frame::SimpleString("server".into()), Frame::SimpleString("crabcache".into())),
                     (Frame::SimpleString("version".into()), Frame::SimpleString("0.1.0".into())),
                     (Frame::SimpleString("proto".into()), Frame::Integer(ctx.protocol)),
                     (Frame::SimpleString("id".into()), Frame::Integer(ctx.id as i64)),

@@ -1,13 +1,13 @@
 [package]
-name = "redisrs"
+name = "crabcache"
 version = "0.1.0"
 edition = "2024"
-description = "A Redis-protocol-compatible in-memory data store written in Rust."
+description = "A Redis-protocol-compatible in-memory data store written in Rust (crabcache)."
 license = "MIT"
-authors = ["redisrs contributors"]
+authors = ["crabcache contributors"]
 
 [[bin]]
-name = "redisrs"
+name = "crabcache"
 path = "src/main.rs"
 
 [dependencies]

@@ -11,7 +11,7 @@ use std::io::{Read, Seek, SeekFrom};
 use std::sync::Arc;
 
 #[derive(Parser, Debug)]
-#[command(name = "redisrs", version, about = "Redis-compatible server in Rust")]
+#[command(name = "crabcache", version, about = "Redis-compatible server in Rust (crabcache)")]
 struct Args {
     #[arg(long, default_value = "127.0.0.1")]
     bind: String,

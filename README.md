@@ -1,4 +1,4 @@
-# redisrs
+# crabcache
 
 > A Redis-protocol-compatible in-memory data store, rebuilt from scratch in **Rust**.
 
