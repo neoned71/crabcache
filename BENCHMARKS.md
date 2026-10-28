@@ -5,20 +5,20 @@ Environment: macOS (Apple Silicon), single machine, loopback.
 - crabcache 0.1.0 (release build, `cargo build --release`)
 - Tool: `redis-benchmark`, `-n 50000 -c 50`
 
-## Results (requests/sec, higher is better)
+## Results (requests/sec, higher is better) — 100k requests, 50 clients
 
 | Command | redis-server 8.10.3 | crabcache | crabcache / redis |
 |---|---:|---:|---:|
-| SET | 185,185 | 131,579 | 0.71x |
-| GET | 199,203 | 140,449 | 0.70x |
-| INCR | 199,203 | 139,276 | 0.70x |
-| LPUSH | 192,308 | 138,504 | 0.72x |
-| RPUSH | 197,628 | 138,889 | 0.70x |
-| LPOP | 190,840 | 139,276 | 0.73x |
-| RPOP | 192,308 | 139,665 | 0.73x |
-| SADD | 186,567 | 136,986 | 0.73x |
-| HSET | 187,970 | 136,240 | 0.72x |
-| ZADD | 189,394 | 135,870 | 0.72x |
+| SET | 190,476 | 134,590 | 0.71x |
+| GET | 202,840 | 140,252 | 0.69x |
+| INCR | 201,613 | 140,252 | 0.70x |
+| LPUSH | 198,413 | 140,449 | 0.71x |
+| RPUSH | 200,803 | 138,889 | 0.69x |
+| LPOP | 199,203 | 140,845 | 0.71x |
+| RPOP | 202,020 | 139,860 | 0.69x |
+| SADD | 202,840 | 108,814 | 0.54x |
+| HSET | 201,207 | 119,760 | 0.60x |
+| ZADD | 200,401 | 126,743 | 0.63x |
 
 Latency (p50) was ~0.22 ms for redis-server and ~0.27–0.32 ms for crabcache.
 
